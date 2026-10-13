@@ -1,6 +1,6 @@
 #!/bin/bash
 # Jardin interior: alertas de humedad (40-55%), CO2 (400-1500 ppm) y temperatura (20-28 C).
-# Avisa a ambos numeros al salir del rango (10 min seguidos) y recuerda cada 15 min si sigue fuera.
+# Avisa a ambos numeros al salir del rango (10 min seguidos) y recuerda cada 30 min si sigue fuera, maximo 25 avisos al dia (counter.jardin_alertas_hoy).
 # Reemplaza las 3 alertas antiguas del jardin (se mueven a archivo_viejo, no se borran). Correr en la Raspberry.
 set -e
 C=/home/botacura/homeassistant/config
@@ -17,7 +17,7 @@ DEST=$C/archivo_viejo/jardin_$(date +%Y%m%d)
 sudo tee $NUEVO >/dev/null <<'YML'
 id: jardin_interior_alertas_ambiente
 alias: Jardin interior | Alertas de humedad, CO2 y temperatura
-description: Rangos - humedad 40-55%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 15 min.
+description: Rangos - humedad 40-55%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 30 min, maximo 25 avisos al dia.
 mode: queued
 max: 5
 triggers:
@@ -46,13 +46,23 @@ triggers:
     below: 400
     for: {minutes: 10}
   - trigger: time_pattern
-    minutes: /15
+    minutes: /30
     id: recordatorio
+  - trigger: time
+    at: '00:00:00'
+    id: reset_diario
   - trigger: homeassistant
     event: start
     id: inicio
 conditions: []
 actions:
+  - if:
+      - condition: trigger
+        id: reset_diario
+    then:
+      - action: counter.reset
+        target: {entity_id: counter.jardin_alertas_hoy}
+      - stop: Contador diario reiniciado
   - variables:
       fuera: >-
         {% set ns = namespace(l=[]) %}
@@ -74,14 +84,20 @@ actions:
         {{ ns.l | join(', ') }}
   - condition: template
     value_template: "{{ fuera | length > 0 }}"
+  - condition: template
+    value_template: "{{ states('counter.jardin_alertas_hoy') | int(0) < 25 }}"
   - variables:
-      texto: "Jardin interior: {{ fuera }}{{ ' (sigue fuera de rango)' if trigger.id == 'recordatorio' else '' }}"
+      texto: >-
+        Jardin interior: {{ fuera }}{{ ' (sigue fuera de rango)' if trigger.id == 'recordatorio' else '' }}{{
+        ' - ultimo aviso de hoy (limite de 25), se reanuda a medianoche' if states('counter.jardin_alertas_hoy') | int(0) == 24 else '' }}
   - action: rest_command.whatsapp_alerta
     data:
       mensaje: "{{ texto }}"
   - action: rest_command.whatsapp_alerta_2
     data:
       mensaje: "{{ texto }}"
+  - action: counter.increment
+    target: {entity_id: counter.jardin_alertas_hoy}
 YML
 
 sudo tee $LUCES >/dev/null <<'YML'
