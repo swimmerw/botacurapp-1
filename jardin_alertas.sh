@@ -49,6 +49,9 @@ triggers:
     hours: /2
     minutes: 5
     id: recordatorio
+  - trigger: homeassistant
+    event: start
+    id: inicio
 conditions: []
 actions:
   - variables:
