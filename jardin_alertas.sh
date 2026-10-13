@@ -85,7 +85,7 @@ YML
 sudo tee $LUCES >/dev/null <<'YML'
 id: jardin_interior_aviso_luces
 alias: Jardin interior | Aviso de luces C1-C4 encendidas o apagadas
-description: Avisa a ambos numeros cuando las luces C1 y C2, C3 y C4 (y Luces C3) se encienden, se apagan o quedan sin conexion 10 min.
+description: Avisa a ambos numeros cuando las luces C1 y C2 y C3 y C4 se encienden, se apagan o quedan sin conexion 10 min.
 mode: queued
 max: 10
 triggers:
@@ -93,7 +93,6 @@ triggers:
     entity_id:
       - switch.sonoff_10027e5aa0_1
       - switch.sonoff_10026dca47_1
-      - switch.sonoff_10027e72bd_1
     from: 'off'
     to: 'on'
     id: encendio
@@ -101,7 +100,6 @@ triggers:
     entity_id:
       - switch.sonoff_10027e5aa0_1
       - switch.sonoff_10026dca47_1
-      - switch.sonoff_10027e72bd_1
     from: 'on'
     to: 'off'
     id: apago
@@ -109,7 +107,6 @@ triggers:
     entity_id:
       - switch.sonoff_10027e5aa0_1
       - switch.sonoff_10026dca47_1
-      - switch.sonoff_10027e72bd_1
     from: ['on', 'off']
     to: unavailable
     for: {minutes: 10}
@@ -118,8 +115,7 @@ conditions: []
 actions:
   - variables:
       nombre: >-
-        {{ {'switch.sonoff_10027e5aa0_1': 'Luces C1 y C2', 'switch.sonoff_10026dca47_1': 'Luces C3 y C4',
-        'switch.sonoff_10027e72bd_1': 'Luces C3'}[trigger.entity_id] }}
+        {{ {'switch.sonoff_10027e5aa0_1': 'Luces C1 y C2', 'switch.sonoff_10026dca47_1': 'Luces C3 y C4'}[trigger.entity_id] }}
       texto: >-
         {% if trigger.id == 'encendio' %}{{ nombre }} se encendieron a las {{ now().strftime('%H:%M') }}
         {% elif trigger.id == 'apago' %}{{ nombre }} se apagaron a las {{ now().strftime('%H:%M') }}
