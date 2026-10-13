@@ -6,6 +6,7 @@ set -e
 C=/home/botacura/homeassistant/config
 A=$C/automations
 NUEVO=$A/jardin_alertas_ambiente.yaml
+LUCES=$A/jardin_luces_aviso.yaml
 VIEJOS=$(sudo grep -lE "1785382300003|1785382300004|1785382300005" $A/*.yaml 2>/dev/null || true)
 for f in $VIEJOS; do
   if [ "$(sudo grep -c '^ *alias:' $f)" != "1" ]; then echo "ERROR: $f tiene mas de una automatizacion. No se cambio nada."; exit 1; fi
@@ -81,13 +82,63 @@ actions:
       mensaje: "{{ texto }}"
 YML
 
+sudo tee $LUCES >/dev/null <<'YML'
+id: jardin_interior_aviso_luces
+alias: Jardin interior | Aviso de luces C1-C4 encendidas o apagadas
+description: Avisa a ambos numeros cuando las luces C1 y C2, C3 y C4 (y Luces C3) se encienden, se apagan o quedan sin conexion 10 min.
+mode: queued
+max: 10
+triggers:
+  - trigger: state
+    entity_id:
+      - switch.sonoff_10027e5aa0_1
+      - switch.sonoff_10026dca47_1
+      - switch.sonoff_10027e72bd_1
+    from: 'off'
+    to: 'on'
+    id: encendio
+  - trigger: state
+    entity_id:
+      - switch.sonoff_10027e5aa0_1
+      - switch.sonoff_10026dca47_1
+      - switch.sonoff_10027e72bd_1
+    from: 'on'
+    to: 'off'
+    id: apago
+  - trigger: state
+    entity_id:
+      - switch.sonoff_10027e5aa0_1
+      - switch.sonoff_10026dca47_1
+      - switch.sonoff_10027e72bd_1
+    from: ['on', 'off']
+    to: unavailable
+    for: {minutes: 10}
+    id: sin_conexion
+conditions: []
+actions:
+  - variables:
+      nombre: >-
+        {{ {'switch.sonoff_10027e5aa0_1': 'Luces C1 y C2', 'switch.sonoff_10026dca47_1': 'Luces C3 y C4',
+        'switch.sonoff_10027e72bd_1': 'Luces C3'}[trigger.entity_id] }}
+      texto: >-
+        {% if trigger.id == 'encendio' %}{{ nombre }} se encendieron a las {{ now().strftime('%H:%M') }}
+        {% elif trigger.id == 'apago' %}{{ nombre }} se apagaron a las {{ now().strftime('%H:%M') }}
+        {% else %}{{ nombre }} sin conexion desde hace 10 min (no se sabe si estan encendidas){% endif %}
+  - action: rest_command.whatsapp_alerta
+    data:
+      mensaje: "Jardin interior: {{ texto }}"
+  - action: rest_command.whatsapp_alerta_2
+    data:
+      mensaje: "Jardin interior: {{ texto }}"
+YML
+
 for f in $VIEJOS; do sudo mv "$f" $DEST/; echo "Movido a archivo_viejo: $(basename $f)"; done
 
 sudo docker exec homeassistant python3 -m homeassistant --script check_config -c /config > /tmp/check_ha.txt 2>&1 || true
 if grep -qiE "Failed config|Invalid config" /tmp/check_ha.txt; then
   echo "Configuracion con errores; se deja todo como estaba:"; grep -iE -A6 "Failed config|Invalid config" /tmp/check_ha.txt | head -25
-  sudo rm -f $NUEVO; for f in $VIEJOS; do sudo mv $DEST/$(basename $f) $A/; done
+  sudo rm -f $NUEVO $LUCES; for f in $VIEJOS; do sudo mv $DEST/$(basename $f) $A/; done
   exit 1
 fi
 sudo docker restart homeassistant >/dev/null
-echo "LISTO: alerta del jardin interior creada (humedad 40-55%, CO2 400-1500 ppm, T 20-28 C). Home Assistant reiniciado."
+echo "LISTO: alertas del jardin interior creadas (humedad 40-55%, CO2 400-1500 ppm, T 20-28 C, luces C1-C4). Home Assistant reiniciado."
