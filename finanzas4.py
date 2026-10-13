@@ -12,8 +12,8 @@ F = "COALESCE(ventas.fecha_abono, DATE(reservas.created_at))"
 a = p.index('// ABONOS'); b = p.index('// ABONOS EXTRA', a)
 seg = p[a:b]
 for viejo, nuevo in [
-    ("YEARWEEK(reservas.created_at, 1)", "YEARWEEK(%s, 1)" % F),
     ("DATE(reservas.created_at)", F),
+    ("YEARWEEK(reservas.created_at, 1)", "YEARWEEK(%s, 1)" % F),
 ]:
     if viejo not in seg:
         sys.exit('ERROR: no encontre "%s" en ABONOS. No se cambio nada.' % viejo)
