@@ -29,6 +29,68 @@
         </div>
     </div>
 
+
+    @if(session('success'))
+        <div class="card-panel green lighten-5 green-text text-darken-3" style="padding:10px 16px">{{ session('success') }}</div>
+    @endif
+    @if(session('error'))
+        <div class="card-panel red lighten-5 red-text text-darken-3" style="padding:10px 16px">{{ session('error') }}</div>
+    @endif
+
+    @if($porRevisar->isNotEmpty())
+    <div class="card" style="border-radius:8px;border-left:4px solid #FF8F00">
+        <div class="card-content" style="padding:16px 20px;overflow-x:auto">
+            <p style="font-weight:700;margin:0 0 4px;color:#E65100">
+                <i class="material-icons tiny">warning</i> Comprobantes por revisar ({{ $porRevisar->count() }})
+            </p>
+            <p class="grey-text" style="margin:0 0 12px;font-size:.8rem">
+                El bot no creó estas reservas porque algo del comprobante quedó en duda. Revisa la imagen y da el pase:
+                <strong>Aprobar</strong> crea la reserva, la confirma y le avisa al cliente con el menú; <strong>Rechazar</strong> le pide el comprobante correcto (el cupo queda apartado 1 hora más).
+            </p>
+            <table class="striped" style="font-size:.85rem;min-width:900px">
+                <thead>
+                    <tr><th>Recibido</th><th>Cliente</th><th>Reserva pedida</th><th class="right-align">Abono esperado</th><th>Lo que se leyó</th><th>Por qué quedó en duda</th><th style="width:230px"></th></tr>
+                </thead>
+                <tbody>
+                @foreach($porRevisar as $c)
+                    <tr>
+                        <td>{{ \Carbon\Carbon::parse($c->created_at)->format('d/m H:i') }}</td>
+                        <td>{{ $c->nombre ?? '—' }}<span class="grey-text" style="display:block;font-size:.75rem">+{{ $c->telefono }}</span></td>
+                        <td>
+                            {{ $c->nombre_programa ?? '—' }} · {{ $c->personas }} pers.
+                            <span class="grey-text" style="display:block;font-size:.75rem">Visita {{ $c->fecha_visita ? \Carbon\Carbon::parse($c->fecha_visita)->format('d/m/Y') : '—' }}
+                            @if($c->estado_hold !== 'activo') · <span class="red-text">cupo {{ $c->estado_hold }}</span>@endif</span>
+                        </td>
+                        <td class="right-align">{{ $f($c->abono_50) }}<span class="grey-text" style="display:block;font-size:.75rem">total {{ $f($c->valor_total) }}</span></td>
+                        <td style="font-size:.8rem">
+                            Monto: <strong>{{ isset($c->datos['monto']) && is_numeric($c->datos['monto']) ? $f($c->datos['monto']) : 'no legible' }}</strong><br>
+                            Fecha: {{ $c->datos['fecha'] ?? '—' }} {{ $c->datos['hora'] ?? '' }}<br>
+                            A: {{ $c->datos['destinatario_nombre'] ?? '—' }} {{ $c->datos['destinatario_cuenta'] ?? '' }}<br>
+                            Desde: {{ $c->datos['nombre_origen'] ?? '—' }} · Op. {{ $c->datos['numero_operacion'] ?? '—' }}
+                        </td>
+                        <td class="orange-text text-darken-3" style="font-size:.8rem">{{ $c->motivos }}</td>
+                        <td>
+                            @if($c->archivo)
+                                <a class="btn-flat waves-effect" style="padding:0 8px" target="_blank" href="{{ route('backoffice.finanzas.reservas_dia.comprobante', $c->id) }}"><i class="material-icons left" style="margin-right:4px">image</i>Ver</a>
+                            @endif
+                            <form method="POST" action="{{ route('backoffice.finanzas.reservas_dia.aprobar', $c->id) }}" style="display:inline" onsubmit="return confirm('¿Aprobar el comprobante y crear la reserva? Se le avisará al cliente.')">
+                                @csrf
+                                <button class="btn-small green waves-effect" type="submit">Aprobar</button>
+                            </form>
+                            <form method="POST" action="{{ route('backoffice.finanzas.reservas_dia.rechazar', $c->id) }}" style="margin-top:6px;display:flex;gap:4px;align-items:center" onsubmit="return confirm('¿Rechazar el comprobante? Se le pedirá al cliente el correcto.')">
+                                @csrf
+                                <input type="text" name="motivo" placeholder="Motivo para el cliente (opcional)" class="browser-default" style="border:1px solid #ddd;border-radius:4px;padding:3px 6px;font-size:.75rem;width:140px">
+                                <button class="btn-small red lighten-1 waves-effect" type="submit">Rechazar</button>
+                            </form>
+                        </td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
     <div class="row" style="margin-bottom:0">
         <div class="col s6 m3">
             <div class="card-panel" style="padding:14px 12px;margin:4px 0;border-left:4px solid #039B7B;background:#e0f2f1">
@@ -92,7 +154,11 @@
                                         {{ $r->medio_abono ?? '—' }}
                                     @endif
                                     @if($r->estado_pago === 'pendiente_verificacion')
-                                        <span class="orange-text" style="font-size:.75rem;display:block">por verificar</span>
+                                        <a class="orange-text" style="font-size:.75rem;display:block" href="{{ route('backoffice.verificacion-pago.index') }}">por verificar</a>
+                                    @endif
+                                    @if(!empty($r->comprobante_alerta))
+                                        <i class="material-icons orange-text tooltipped" style="font-size:1rem;vertical-align:middle;cursor:help"
+                                           title="{{ $r->comprobante_alerta }}" data-position="left" data-tooltip="{{ $r->comprobante_alerta }}">warning</i>
                                     @endif
                                 </td>
                                 <td class="right-align">{{ $f($r->total_pagar ?? $r->diferencia_programa) }}</td>
@@ -156,4 +222,10 @@
         </div>
     </div>
 </div>
+@endsection
+
+@section('foot')
+<script>
+    $(function () { if ($.fn.tooltip) { $('.tooltipped').tooltip({delay: 50}); } });
+</script>
 @endsection
