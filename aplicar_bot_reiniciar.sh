@@ -9,6 +9,6 @@ python3 /tmp/bot_reiniciar.py || exit 1
 for f in $W $C; do
   php -l $f || { for g in $W $C; do b=$(ls $g.bak.* 2>/dev/null | sort | tail -1); [ -n "$b" ] && cp "$b" $g; done; echo "ERROR de sintaxis: archivos restaurados"; exit 1; }
 done
-grep -q '^BOT_TELEFONOS_EQUIPO=' .env || echo 'BOT_TELEFONOS_EQUIPO=56961910398,56940014282' >> .env
+grep -q '^BOT_TELEFONOS_EQUIPO=' .env || echo 'BOT_TELEFONOS_EQUIPO=56961910398,56940014282,56961249012' >> .env
 php artisan config:clear >/dev/null
-echo "LISTO: escribe #reiniciar al bot desde 56961910398 o 56940014282"
+echo "LISTO: escribe #reiniciar al bot desde 56961910398, 56940014282 o 56961249012"

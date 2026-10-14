@@ -38,7 +38,7 @@ if 'reiniciarConversacion' not in w:
         }
         $equipo = array_filter(array_map(function ($t) {
             return substr(preg_replace('/\D/', '', $t), -9);
-        }, explode(',', (string) env('BOT_TELEFONOS_EQUIPO', '56961910398,56940014282'))));
+        }, explode(',', (string) env('BOT_TELEFONOS_EQUIPO', '56961910398,56940014282,56961249012'))));
         return in_array(substr(preg_replace('/\D/', '', $telefono), -9), $equipo, true);
     }
 
