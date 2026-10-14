@@ -2,100 +2,120 @@
 
 @section('title', 'Conversaciones del bot')
 
-@section('content')
-@php
-    $anterior = $fecha->copy()->subDay()->toDateString();
-    $siguiente = $fecha->copy()->addDay()->toDateString();
-    $nombreDe = function ($c) use ($tieneNombre) { return ($tieneNombre && !empty($c->nombre_cliente)) ? $c->nombre_cliente : 'Sin nombre'; };
-@endphp
+@section('head')
 <style>
-    .bc-lista a.bc-item { display:block; padding:10px 12px; border-bottom:1px solid #eee; color:#333; }
-    .bc-lista a.bc-item:hover { background:#f5f5f5; }
-    .bc-lista a.bc-item.on { background:#ede7f6; border-left:3px solid #6A1B9A; }
-    .bc-chat { background:#efeae2; border-radius:8px; padding:14px; max-height:70vh; overflow-y:auto; }
-    .bc-msg { max-width:78%; padding:8px 11px; border-radius:8px; margin:6px 0; white-space:pre-wrap; font-size:.88rem; line-height:1.35; box-shadow:0 1px 1px rgba(0,0,0,.08); }
-    .bc-cliente { background:#fff; margin-right:auto; }
-    .bc-bot { background:#d9fdd3; margin-left:auto; }
-    .bc-equipo { background:#cfe8fc; margin-left:auto; }
-    .bc-sistema { background:#fff8e1; color:#795548; font-size:.78rem; margin:6px auto; max-width:92%; }
-    .bc-quien { display:block; font-size:.7rem; font-weight:700; opacity:.6; margin-bottom:2px; text-transform:uppercase; }
+.apr-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.apr-seg{display:inline-flex;background:#f1f5f9;border-radius:12px;padding:4px;gap:2px}
+.apr-seg a{padding:6px 14px;border-radius:9px;color:#475569;font-weight:600;font-size:.85rem}
+.apr-seg a.on{background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+.apr-box{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px 18px}
+.apr-tabla{width:100%;font-size:.88rem}
+.apr-tabla td,.apr-tabla th{padding:8px 6px;border-bottom:1px solid #f1f5f9;text-align:left}
+.apr-badge{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569}
+.apr-badge.e4,.apr-badge.e5{background:#d1fae5;color:#065f46}.apr-badge.ab{background:#fef3c7;color:#92400e}.apr-badge.de{background:#ede9fe;color:#5b21b6}
+.apr-link{color:#2563eb;cursor:pointer;font-size:.82rem}
+.apr-btn{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;color:#334155;font-weight:600;font-size:.85rem;cursor:pointer}
+.apr-modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:16px}
+.apr-modal.open{display:flex}
+.apr-modal-card{background:#f8fafc;border-radius:18px;width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.apr-modal-head{padding:14px 18px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.apr-chat{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.apr-msg{max-width:85%;padding:8px 12px;border-radius:14px;font-size:.9rem;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
+.apr-msg.cliente{align-self:flex-start;background:#fff;border:1px solid #e2e8f0}
+.apr-msg.bot{align-self:flex-end;background:#dcf8c6}
+.apr-msg.equipo{align-self:flex-end;background:#dbeafe}
+.apr-msg.sistema{align-self:center;background:transparent;color:#64748b;font-size:.75rem;font-family:monospace;max-width:100%}
 </style>
+@endsection
+
+@section('content')
 <div class="section">
-    <div class="row valign-wrapper" style="margin-bottom:8px">
-        <div class="col s12 m6">
-            <h5 class="grey-text text-darken-2" style="margin:0">
-                <i class="material-icons left" style="font-size:1.5rem">forum</i> Conversaciones del bot
-            </h5>
+    <p class="caption"><strong>Conversaciones del bot</strong></p>
+    <div class="divider"></div>
+
+    <div class="apr-top" style="margin-top:16px">
+        <div class="apr-seg">
+            @foreach ([1 => 'Hoy', 7 => '7 días', 14 => '14 días', 30 => '30 días', 90 => '90 días'] as $d => $txt)
+                <a href="{{ route('backoffice.bot-conversaciones.index', ['dias' => $d]) }}" class="{{ $dias == $d ? 'on' : '' }}">{{ $txt }}</a>
+            @endforeach
         </div>
-        <div class="col s12 m6" style="text-align:right">
-            <form method="GET" action="{{ route('backoffice.bot-conversaciones.index') }}" style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-                <a class="btn-flat waves-effect" href="{{ route('backoffice.bot-conversaciones.index', ['fecha' => $anterior]) }}" title="Día anterior"><i class="material-icons">chevron_left</i></a>
-                <input type="date" name="fecha" value="{{ $fecha->toDateString() }}" class="browser-default" style="border:1px solid #ccc;border-radius:4px;padding:4px 8px" onchange="this.form.q.value='';this.form.submit()">
-                <a class="btn-flat waves-effect" href="{{ route('backoffice.bot-conversaciones.index', ['fecha' => $siguiente]) }}" title="Día siguiente"><i class="material-icons">chevron_right</i></a>
-                <input type="text" name="q" value="{{ $buscar }}" placeholder="Buscar nombre o teléfono" class="browser-default" style="border:1px solid #ccc;border-radius:4px;padding:4px 8px;width:190px">
-                <button class="btn-flat waves-effect" type="submit"><i class="material-icons">search</i></button>
-            </form>
-        </div>
+        <input type="text" id="convBuscar" class="browser-default" placeholder="Buscar nombre o teléfono"
+               style="height:38px;border:1px solid #d0d0d0;border-radius:10px;padding:0 12px;min-width:240px">
     </div>
 
-    <div class="row">
-        <div class="col s12 m4">
-            <div class="card" style="border-radius:8px">
-                <div class="card-content" style="padding:0">
-                    <p style="padding:12px;margin:0;font-weight:700;color:#6A1B9A;border-bottom:1px solid #eee">
-                        {{ $buscar !== '' ? 'Resultados para "' . $buscar . '"' : 'Con movimiento el ' . $fecha->format('d/m/Y') }} ({{ $conversaciones->count() }})
-                    </p>
-                    <div class="bc-lista" style="max-height:72vh;overflow-y:auto">
-                        @forelse($conversaciones as $c)
-                            <a class="bc-item {{ $actual && $actual->id == $c->id ? 'on' : '' }}"
-                               href="{{ route('backoffice.bot-conversaciones.index', array_filter(['fecha' => $fecha->toDateString(), 'q' => $buscar, 'id' => $c->id])) }}">
-                                <strong>{{ $nombreDe($c) }}</strong>
-                                @if($c->con_equipo)<span class="new badge blue" data-badge-caption="equipo"></span>@endif
-                                <span class="grey-text" style="display:block;font-size:.75rem">+{{ $c->usuario_id }} · {{ \Carbon\Carbon::parse($c->updated_at)->format('d/m H:i') }} · {{ $c->total_mensajes }} mensajes</span>
-                                <span class="grey-text text-darken-1" style="display:block;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ $c->ultimo }}</span>
-                            </a>
-                        @empty
-                            <p class="grey-text" style="padding:12px">No hay conversaciones.</p>
-                        @endforelse
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="apr-box" style="overflow-x:auto;">
+        <table class="apr-tabla">
+            <thead><tr><th>Fecha</th><th>Cliente</th><th>Llegó a</th><th>Estado</th><th>Mensajes</th><th></th></tr></thead>
+            <tbody>
+            @forelse ($conversaciones as $c)
+                <tr data-buscar="{{ mb_strtolower($c->nombre . ' ' . $c->telefono) }}">
+                    <td>{{ $c->fecha->locale('es')->isoFormat('D MMM HH:mm') }}</td>
+                    <td>{{ $c->nombre }}<br><small style="color:#94a3b8;">+{{ $c->telefono }}</small></td>
+                    <td><span class="apr-badge e{{ $c->etapa_num }}">{{ $c->etapa }}</span></td>
+                    <td>
+                        @if ($c->derivada)<span class="apr-badge de">Equipo</span>@endif
+                        @if ($c->abandonada)<span class="apr-badge ab">Se cortó</span>@endif
+                    </td>
+                    <td>{{ $c->turnos }}</td>
+                    <td><span class="apr-link" data-conv="{{ $c->id }}" data-tel="{{ $c->telefono }}">Ver</span></td>
+                </tr>
+            @empty
+                <tr><td colspan="6" style="color:#64748b">No hay conversaciones en el período.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+    <p class="grey-text" style="font-size:.75rem;margin-top:6px">Se guardan los últimos mensajes de cada conversación. No incluye los números de prueba.</p>
+</div>
 
-        <div class="col s12 m8">
-            @if($actual)
-                <div class="card" style="border-radius:8px">
-                    <div class="card-content" style="padding:14px 16px">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-                            <div>
-                                <strong style="font-size:1.05rem">{{ $nombreDe($actual) }}</strong>
-                                <span class="grey-text" style="font-size:.85rem"> +{{ $actual->usuario_id }} · {{ ucfirst($actual->canal ?? 'whatsapp') }}</span>
-                                @if($actual->con_equipo)
-                                    <span class="blue-text" style="font-size:.8rem;display:block">Atendida por el equipo hasta {{ \Carbon\Carbon::parse($actual->humano_hasta)->format('d/m H:i') }} (el bot no responde)</span>
-                                @endif
-                            </div>
-                            <a class="btn-small green waves-effect" target="_blank" href="https://wa.me/{{ preg_replace('/\D/', '', $actual->usuario_id) }}"><i class="material-icons left">chat</i>Abrir en WhatsApp</a>
-                        </div>
-                        <div class="bc-chat" id="bc-chat">
-                            @forelse($mensajes as $m)
-                                <div class="bc-msg bc-{{ $m['quien'] }}"><span class="bc-quien">{{ ['cliente' => 'Cliente', 'bot' => 'Bot', 'equipo' => 'Equipo', 'sistema' => 'Sistema'][$m['quien']] }}</span>{{ $m['texto'] }}</div>
-                            @empty
-                                <p class="grey-text center-align">Sin mensajes guardados.</p>
-                            @endforelse
-                        </div>
-                        <p class="grey-text" style="font-size:.75rem;margin:6px 0 0">Se guardan los últimos mensajes de cada conversación (no el chat completo de WhatsApp).</p>
-                    </div>
-                </div>
-            @else
-                <div class="card-panel grey lighten-4 grey-text center-align" style="padding:40px">Elige una conversación de la lista para ver el chat.</div>
-            @endif
+<div class="apr-modal" id="aprModal">
+    <div class="apr-modal-card">
+        <div class="apr-modal-head">
+            <strong id="aprModalTit">Conversación</strong>
+            <span>
+                <a class="apr-btn" id="aprModalWa" target="_blank" href="#" style="color:#128c7e">WhatsApp</a>
+                <button type="button" class="apr-btn" id="aprModalCerrar">Cerrar</button>
+            </span>
         </div>
+        <div class="apr-chat" id="aprChat"></div>
     </div>
 </div>
 @endsection
 
 @section('foot')
 <script>
-    (function () { var c = document.getElementById('bc-chat'); if (c) { c.scrollTop = c.scrollHeight; } })();
+(function () {
+    var buscar = document.getElementById('convBuscar');
+    buscar.addEventListener('input', function () {
+        var q = buscar.value.trim().toLowerCase().replace(/\+/g, '');
+        document.querySelectorAll('tr[data-buscar]').forEach(function (tr) {
+            tr.style.display = !q || tr.dataset.buscar.indexOf(q) !== -1 ? '' : 'none';
+        });
+    });
+
+    var modal = document.getElementById('aprModal'), chat = document.getElementById('aprChat');
+    var urlBase = @json(route('backoffice.bot-configuracion.aprendizajes.conversacion', 0));
+    function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    document.addEventListener('click', function (e) {
+        var el = e.target.closest('[data-conv]');
+        if (!el) return;
+        chat.innerHTML = '<p style="color:#64748b">Cargando…</p>';
+        document.getElementById('aprModalWa').href = 'https://wa.me/' + (el.dataset.tel || '');
+        modal.classList.add('open');
+        fetch(urlBase.replace(/0$/, el.dataset.conv), { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                document.getElementById('aprModalTit').textContent = (d.cliente || 'Conversación') + ' · #' + (d.id || '');
+                chat.innerHTML = (d.mensajes || []).map(function (m) {
+                    var et = { cliente: 'Cliente', bot: 'Bot', equipo: 'Equipo', sistema: '' }[m.de];
+                    return '<div class="apr-msg ' + m.de + '">' + (et ? '<small style="display:block;font-weight:700;color:#64748b;">' + et + '</small>' : '') + esc(m.texto) + '</div>';
+                }).join('') || '<p style="color:#64748b">Sin mensajes.</p>';
+                chat.scrollTop = chat.scrollHeight;
+            })
+            .catch(function () { chat.innerHTML = '<p style="color:#b91c1c">No se pudo cargar la conversación.</p>'; });
+    });
+    document.getElementById('aprModalCerrar').onclick = function () { modal.classList.remove('open'); };
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('open'); });
+})();
 </script>
 @endsection
