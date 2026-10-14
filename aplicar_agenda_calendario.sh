@@ -20,7 +20,7 @@ UPDATE bot_secciones_texto SET contenido = 'APERTURA DE AGENDA (parejas y grupos
 - No hay una fecha fija de apertura: solo se pueden reservar los días habilitados en el calendario (lo verifican las acciones de disponibilidad y cotización).
 - Si una pareja o un grupo de menos de 10 personas pide un día que no está habilitado, NO prometas una fecha de apertura ni hables del día 20. Dile con amabilidad que esa fecha aún no está habilitada y ofrécele los días habilitados más cercanos; si quiere esa fecha igual, que nos vuelva a escribir más adelante.', updated_at = NOW()
 WHERE clave = 'regla_apertura_agenda';
-UPDATE bot_pasos_flujo SET instrucciones = REPLACE(instrucciones, 'Solo confirmar disponibilidad para el mes con agenda abierta.', 'Solo confirmar disponibilidad para días habilitados en el calendario.'), updated_at = NOW() WHERE id = 3;
+UPDATE bot_pasos_flujo SET instrucciones = REPLACE(instrucciones, 'Solo confirmar disponibilidad para el mes con agenda abierta.', 'Solo confirmar disponibilidad para días habilitados en el calendario.') WHERE id = 3;
 SQL
 M -e "SELECT clave, LEFT(contenido,120) texto FROM bot_secciones_texto WHERE clave='regla_apertura_agenda'; SELECT id, RIGHT(instrucciones,90) texto FROM bot_pasos_flujo WHERE id=3;"
 php artisan cache:clear >/dev/null 2>&1; php artisan config:clear >/dev/null
