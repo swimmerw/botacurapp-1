@@ -1,6 +1,6 @@
 #!/bin/bash
 # Jardin interior: alertas de humedad (40-55%), CO2 (400-1500 ppm) y temperatura (20-28 C).
-# Avisa a ambos numeros al salir del rango (10 min seguidos) y recuerda cada 30 min si sigue fuera, maximo 25 avisos al dia (counter.jardin_alertas_hoy).
+# Avisa a ambos numeros al salir del rango (10 min seguidos) y recuerda cada 60 min si sigue fuera, maximo 25 avisos al dia (counter.jardin_alertas_hoy).
 # Reemplaza las 3 alertas antiguas del jardin (se mueven a archivo_viejo, no se borran). Correr en la Raspberry.
 set -e
 C=/home/botacura/homeassistant/config
@@ -17,7 +17,7 @@ DEST=$C/archivo_viejo/jardin_$(date +%Y%m%d)
 sudo tee $NUEVO >/dev/null <<'YML'
 id: jardin_interior_alertas_ambiente
 alias: Jardin interior | Alertas de humedad, CO2 y temperatura
-description: Rangos - humedad 40-55%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 30 min, maximo 25 avisos al dia.
+description: Rangos - humedad 40-55%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 60 min, maximo 25 avisos al dia.
 mode: queued
 max: 5
 triggers:
@@ -46,7 +46,7 @@ triggers:
     below: 400
     for: {minutes: 10}
   - trigger: time_pattern
-    minutes: /30
+    minutes: 0
     id: recordatorio
   - trigger: time
     at: '00:00:00'
