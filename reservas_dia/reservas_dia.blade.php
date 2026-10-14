@@ -141,7 +141,13 @@
                         @foreach($reservas as $r)
                             <tr>
                                 <td>{{ \Carbon\Carbon::parse($r->created_at)->format('H:i') }}</td>
-                                <td>{{ $r->id }}</td>
+                                <td>
+                                    @if(Route::has('backoffice.reserva.show'))
+                                        <a href="{{ route('backoffice.reserva.show', $r->id) }}" title="Ver la reserva" style="font-weight:600">{{ $r->id }}</a>
+                                    @else
+                                        {{ $r->id }}
+                                    @endif
+                                </td>
                                 <td>{{ $r->nombre_cliente }}</td>
                                 <td>{{ $r->nombre_programa ?? '—' }}</td>
                                 <td class="center-align">{{ $r->cantidad_personas }}</td>
@@ -187,7 +193,13 @@
                         <tbody>
                         @foreach($abonosExtra as $a)
                             <tr>
-                                <td>{{ $a->reserva_id ?? '—' }}</td>
+                                <td>
+                                    @if($a->reserva_id && Route::has('backoffice.reserva.show'))
+                                        <a href="{{ route('backoffice.reserva.show', $a->reserva_id) }}" style="font-weight:600">{{ $a->reserva_id }}</a>
+                                    @else
+                                        {{ $a->reserva_id ?? '—' }}
+                                    @endif
+                                </td>
                                 <td>{{ $a->nombre_cliente ?? '—' }}</td>
                                 <td>{{ $a->fecha_visita ? \Carbon\Carbon::parse($a->fecha_visita)->format('d/m/Y') : '—' }}</td>
                                 <td class="right-align">{{ $f($a->monto) }}</td>
