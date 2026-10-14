@@ -7,6 +7,13 @@ MENU = B + 'resources/views/themes/backoffice/layouts/includes/left-sidebar.blad
 ts = time.strftime('%Y%m%d%H%M')
 
 t = open(INICIO, encoding='utf-8').read()
+viejo = re.compile(r"\n<div class=\"col s12 m6 l3\">\n<a href=\"\{\{ route\('backoffice\.bot-configuracion\.index'\) \}\}\">.*?</a>\n</div>\n", re.S)
+if len(viejo.findall(t)) == 1:
+    t = viejo.sub('\n', t)
+    t = t.replace("    $botActivo = \\App\\BotSeccionTexto::where('clave', 'bot_activo')->value('contenido') !== '0';\n", '')
+    shutil.copy(INICIO, INICIO + '.bak.' + ts)
+    open(INICIO, 'w', encoding='utf-8').write(t)
+    print('Tarjeta Configuracion del bot quitada del inicio')
 if 'finanzas.reservas_dia' not in t:
     pat = r"(route\('backoffice\.compras\.botacura'\).*?</a>\s*</div>)(\s*@endif)"
     if len(re.findall(pat, t, re.S)) != 1:
@@ -38,26 +45,7 @@ style="--animate-delay: 1s; --animate-duration: 2s;">
 @if (Auth::user()->has_role(config('app.admin_role')))
 @php
     $conversacionesHoy = \Schema::hasTable('bot_conversaciones') ? \DB::table('bot_conversaciones')->whereDate('updated_at', now()->toDateString())->count() : 0;
-    $botActivo = \App\BotSeccionTexto::where('clave', 'bot_activo')->value('contenido') !== '0';
 @endphp
-<div class="col s12 m6 l3">
-<a href="{{ route('backoffice.bot-configuracion.index') }}">
-<div class="animate__animated animate__backInLeft card gradient-45deg-purple-deep-purple gradient-shadow min-height-100 white-text"
-style="--animate-delay: 1s; --animate-duration: 2s;">
-<div class="padding-4">
-<div class="col s7 m7">
-<i class="material-icons background-round mt-5">android</i>
-<p>Configuración del bot</p>
-</div>
-<div class="col s5 m5 right-align">
-<h5 class="mb-0">{{ $botActivo ? 'On' : 'Off' }}</h5>
-<p class="no-margin">{{ $botActivo ? 'activo' : 'apagado' }}</p>
-</div>
-</div>
-</div>
-</a>
-</div>
-
 <div class="col s12 m6 l3">
 <a href="{{ route('backoffice.bot-configuracion.index') }}#aprendizajes">
 <div class="animate__animated animate__backInLeft card gradient-45deg-purple-deep-purple gradient-shadow min-height-100 white-text"
