@@ -1,0 +1,291 @@
+From 6b283f99d774314eb4e1c8f00be33ac6921e6fc9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 18:26:59 -0300
+Subject: [PATCH] Varios programas: ubicaciones de todos los programas,
+ estacion extra e informes
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/Http/Controllers/AdminController.php      | 13 +++---
+ app/Http/Controllers/InformeController.php    | 27 ++++++++---
+ .../ReporteFinancieroController.php           |  2 +-
+ app/Http/Controllers/VisitaController.php     | 16 ++++++-
+ app/Reserva.php                               | 45 +++++++++++++++++++
+ .../backoffice/pages/visita/create.blade.php  |  4 +-
+ .../backoffice/pages/visita/edit.blade.php    |  4 +-
+ .../pages/visita/edit_ubicacion.blade.php     |  4 +-
+ .../pages/visita/registrar.blade.php          |  4 +-
+ 9 files changed, 97 insertions(+), 22 deletions(-)
+
+diff --git a/app/Http/Controllers/AdminController.php b/app/Http/Controllers/AdminController.php
+index a01a773..c24fa6a 100644
+--- a/app/Http/Controllers/AdminController.php
++++ b/app/Http/Controllers/AdminController.php
+@@ -872,7 +872,7 @@ class AdminController extends Controller
+             DB::raw('SUM(ventas.abono_programa) as abono'),
+             DB::raw('SUM(ventas.diferencia_programa) as diferencia'),
+             DB::raw('SUM(ventas.total_pagar) as pendiente'),
+-            DB::raw('SUM(programas.valor_programa * reservas.cantidad_personas) as total_pagar')
++            DB::raw('SUM(COALESCE((SELECT SUM(rp.valor_unitario * rp.cantidad_personas) FROM reserva_programas rp WHERE rp.id_reserva = reservas.id), programas.valor_programa * reservas.cantidad_personas)) as total_pagar')
+         )
+             ->join('reservas', 'ventas.id_reserva', '=', 'reservas.id')
+             ->join('programas', 'reservas.id_programa', '=', 'programas.id')
+@@ -994,8 +994,11 @@ class AdminController extends Controller
+         $programas = Programa::with(['reservas' => function ($query) use ($mes, $anio) {
+             $query->whereMonth('fecha_visita', $mes)
+                 ->whereYear('fecha_visita', $anio);
+-        }])->get()->map(function ($programa) {
+-            $programa->total_programas = $programa->reservas->count();
++        }])->get()->map(function ($programa) use ($mes, $anio) {
++            $programa->total_programas = Reserva::conPrograma($programa->id)
++                ->whereMonth('fecha_visita', $mes)
++                ->whereYear('fecha_visita', $anio)
++                ->count();
+             return $programa;
+         });
+ 
+@@ -1090,7 +1093,7 @@ class AdminController extends Controller
+         });
+ 
+         $programas = Programa::all()->map(function ($programa) use ($dia, $mes, $anio) {
+-            $cuenta = Reserva::where('id_programa', $programa->id)
++            $cuenta = Reserva::conPrograma($programa->id)
+                 ->whereDay('fecha_visita', $dia)
+                 ->whereMonth('fecha_visita', $mes)
+                 ->whereYear('fecha_visita', $anio)
+@@ -1250,7 +1253,7 @@ class AdminController extends Controller
+             })
+             ->get()
+             ->map(function ($programa) use ($dia, $mes, $anio) {
+-                $cuenta = Reserva::where('id_programa', $programa->id)
++                $cuenta = Reserva::conPrograma($programa->id)
+                     ->whereDay('fecha_visita', $dia)
+                     ->whereMonth('fecha_visita', $mes)
+                     ->whereYear('fecha_visita', $anio)
+diff --git a/app/Http/Controllers/InformeController.php b/app/Http/Controllers/InformeController.php
+index a130635..14056a3 100644
+--- a/app/Http/Controllers/InformeController.php
++++ b/app/Http/Controllers/InformeController.php
+@@ -18,14 +18,27 @@ class InformeController extends Controller
+             ? Carbon::createFromFormat('Y-m-d', $mes . '-01')
+             : Carbon::now();
+ 
+-        $programasMasContratados = Reserva::select('id_programa', DB::raw('COUNT(*) as total'))
+-            ->whereMonth('fecha_visita', $fecha->month)
++        // Cuenta cada programa de la reserva, tambien los adicionales (15/10/2026)
++        $idsMes = Reserva::whereMonth('fecha_visita', $fecha->month)
+             ->whereYear('fecha_visita', $fecha->year)
+-            ->groupBy('id_programa')
+-            ->orderByDesc('total')
+-            ->with('programa') // Asegúrate de tener la relación definida
+-            ->take(10)         // Limita a los 10 programas más contratados
+-            ->get();
++            ->pluck('id');
++        $conteo = [];
++        foreach (DB::table('reserva_programas')->whereIn('id_reserva', $idsMes)
++            ->select('id_programa', DB::raw('COUNT(DISTINCT id_reserva) as total'))
++            ->groupBy('id_programa')->get() as $f) {
++            $conteo[$f->id_programa] = ($conteo[$f->id_programa] ?? 0) + (int) $f->total;
++        }
++        foreach (Reserva::whereIn('id', $idsMes)
++            ->whereNotIn('id', DB::table('reserva_programas')->select('id_reserva'))
++            ->select('id_programa', DB::raw('COUNT(*) as total'))
++            ->groupBy('id_programa')->get() as $f) {
++            $conteo[$f->id_programa] = ($conteo[$f->id_programa] ?? 0) + (int) $f->total;
++        }
++        arsort($conteo);
++        $nombres = \App\Programa::whereIn('id', array_keys($conteo))->get()->keyBy('id');
++        $programasMasContratados = collect(array_slice($conteo, 0, 10, true))->map(function ($total, $id) use ($nombres) {
++            return (object) ['id_programa' => $id, 'total' => $total, 'programa' => $nombres[$id] ?? (object) ['nombre_programa' => 'Programa #' . $id]];
++        })->values();
+ 
+         // TOP 10 BEBESTIBLES
+         $bebestiblesConsumo = DetalleConsumo::select('id_producto', DB::raw('SUM(cantidad_producto) as total'))
+diff --git a/app/Http/Controllers/ReporteFinancieroController.php b/app/Http/Controllers/ReporteFinancieroController.php
+index fc40a5f..35572c5 100755
+--- a/app/Http/Controllers/ReporteFinancieroController.php
++++ b/app/Http/Controllers/ReporteFinancieroController.php
+@@ -450,7 +450,7 @@ class ReporteFinancieroController extends Controller
+             })
+             ->get()
+             ->map(function ($programa) use ($mes, $anio) {
+-                $cuenta = Reserva::where('id_programa', $programa->id)
++                $cuenta = Reserva::conPrograma($programa->id)
+                     ->whereMonth('created_at', $mes)
+                     ->whereYear('created_at', $anio)
+                     ->count();
+diff --git a/app/Http/Controllers/VisitaController.php b/app/Http/Controllers/VisitaController.php
+index b69a096..7ed664a 100644
+--- a/app/Http/Controllers/VisitaController.php
++++ b/app/Http/Controllers/VisitaController.php
+@@ -842,7 +842,21 @@ class VisitaController extends Controller
+                 return ! in_array($ubicacion->nombre, $ubicacionesOcupadas);
+             });
+ 
+-        $subTipos = $this->subTiposPermitidosParaPrograma(optional($reserva->programa)->espacio_tipo);
++        // Varios programas: se permiten las ubicaciones de todos ellos (terraza y estacion).
++        // Estacion agregada como servicio extra: tambien se habilitan las estaciones. 15/10/2026
++        $subTipos = [];
++        foreach ($reserva->detalleProgramas() as $dp) {
++            $st = $this->subTiposPermitidosParaPrograma(optional($dp->programa)->espacio_tipo);
++            if ($st === null) {
++                $subTipos = null;
++                break;
++            }
++            $subTipos = array_merge($subTipos, $st);
++        }
++        if ($subTipos !== null && $reserva->tieneEstacionExtra()) {
++            $subTipos = array_merge($subTipos, ['estacion_normal', 'estacion_grupal']);
++        }
++        $subTipos = $subTipos === null ? null : array_values(array_unique($subTipos));
+         if ($subTipos) {
+             $ubicaciones = $ubicaciones->filter(function ($ubicacion) use ($subTipos) {
+                 return in_array($ubicacion->sub_tipo, $subTipos);
+diff --git a/app/Reserva.php b/app/Reserva.php
+index 6a8132e..0c1718b 100644
+--- a/app/Reserva.php
++++ b/app/Reserva.php
+@@ -195,6 +195,51 @@ class Reserva extends Model
+         })->values()->all();
+     }
+ 
++    /**
++     * Reservas que incluyen el programa (como principal o como adicional). Para conteos
++     * de informes con reservas de varios programas (15/10/2026).
++     */
++    public function scopeConPrograma($query, $programaId)
++    {
++        return $query->where(function ($w) use ($programaId) {
++            $w->whereIn('reservas.id', function ($s) use ($programaId) {
++                $s->select('id_reserva')->from('reserva_programas')->where('id_programa', $programaId);
++            })->orWhere(function ($x) use ($programaId) {
++                $x->where('reservas.id_programa', $programaId)
++                    ->whereNotIn('reservas.id', function ($s) {
++                        $s->select('id_reserva')->from('reserva_programas');
++                    });
++            });
++        });
++    }
++
++    /**
++     * Solo programas wellness (terraza/reposera) y sin estacion extra: el formulario de
++     * ubicaciones pide la preferencia terraza o reposera. Con otros programas o con estacion
++     * extra se muestran todas las ubicaciones permitidas. 15/10/2026
++     */
++    public function getSoloWellnessAttribute(): bool
++    {
++        foreach ($this->detalleProgramas() as $dp) {
++            if (optional($dp->programa)->espacio_tipo !== 'wellness') {
++                return false;
++            }
++        }
++        return ! $this->tieneEstacionExtra();
++    }
++
++    /** ¿Se agrego una estacion de descanso como servicio extra? */
++    public function tieneEstacionExtra(): bool
++    {
++        $consumo = optional($this->venta)->consumo;
++        if (! $consumo) {
++            return false;
++        }
++        return $consumo->detalleServiciosExtra()->with('servicio')->get()->contains(function ($d) {
++            return $d->servicio && mb_stripos($d->servicio->nombre_servicio, 'estaci') !== false;
++        });
++    }
++
+     /** Nombres de servicios de todos los programas de la reserva (sin repetir). */
+     public function serviciosNombres(): array
+     {
+diff --git a/resources/views/themes/backoffice/pages/visita/create.blade.php b/resources/views/themes/backoffice/pages/visita/create.blade.php
+index d57f315..f2e93bd 100644
+--- a/resources/views/themes/backoffice/pages/visita/create.blade.php
++++ b/resources/views/themes/backoffice/pages/visita/create.blade.php
+@@ -346,7 +346,7 @@
+ 
+                             <input type="hidden" name="id_ubicacion" id="id_ubicacion_principal">
+ 
+-                            @if(optional($reserva->programa)->espacio_tipo === 'wellness')
++                            @if($reserva->solo_wellness)
+                             <div class="row">
+                                 <h6><strong>Terraza o Reposera</strong></h6>
+                                 <div class="col s12">
+@@ -620,7 +620,7 @@ $(document).ready(function () {
+   var UBICACIONES = @json($ubicaciones);
+   var ASIGNADAS = @json($ubicacionesAsignadas);
+   var CANTIDAD_PERSONAS = {{ (int) $reserva->cantidad_personas }};
+-  var ES_WELLNESS = {{ optional($reserva->programa)->espacio_tipo === 'wellness' ? 'true' : 'false' }};
++  var ES_WELLNESS = {{ $reserva->solo_wellness ? 'true' : 'false' }};
+ 
+   var $filas = $('#ubicaciones_filas');
+   var filaIndex = 0;
+diff --git a/resources/views/themes/backoffice/pages/visita/edit.blade.php b/resources/views/themes/backoffice/pages/visita/edit.blade.php
+index 9b6dc55..9f8b2d7 100644
+--- a/resources/views/themes/backoffice/pages/visita/edit.blade.php
++++ b/resources/views/themes/backoffice/pages/visita/edit.blade.php
+@@ -358,7 +358,7 @@
+ 
+                             <input type="hidden" name="id_ubicacion" id="id_ubicacion_principal">
+ 
+-                            @if(optional($reserva->programa)->espacio_tipo === 'wellness')
++                            @if($reserva->solo_wellness)
+                             <div class="row">
+                                 <h6><strong>Terraza o Reposera</strong></h6>
+                                 <div class="col s12">
+@@ -605,7 +605,7 @@ $(document).ready(function () {
+   var UBICACIONES = @json($ubicaciones);
+   var ASIGNADAS = @json($ubicacionesAsignadas);
+   var CANTIDAD_PERSONAS = {{ (int) $reserva->cantidad_personas }};
+-  var ES_WELLNESS = {{ optional($reserva->programa)->espacio_tipo === 'wellness' ? 'true' : 'false' }};
++  var ES_WELLNESS = {{ $reserva->solo_wellness ? 'true' : 'false' }};
+ 
+   var $filas = $('#ubicaciones_filas');
+   var filaIndex = 0;
+diff --git a/resources/views/themes/backoffice/pages/visita/edit_ubicacion.blade.php b/resources/views/themes/backoffice/pages/visita/edit_ubicacion.blade.php
+index 25fb443..08d3c9c 100644
+--- a/resources/views/themes/backoffice/pages/visita/edit_ubicacion.blade.php
++++ b/resources/views/themes/backoffice/pages/visita/edit_ubicacion.blade.php
+@@ -37,7 +37,7 @@
+                             @csrf
+                             @method('PUT')
+ 
+-                            @if(optional($reserva->programa)->espacio_tipo === 'wellness')
++                            @if($reserva->solo_wellness)
+                             <div class="row">
+                                 <h6><strong>Terraza o Reposera</strong></h6>
+                                 <div class="col s12">
+@@ -117,7 +117,7 @@ $(document).ready(function () {
+   var UBICACIONES = @json($ubicaciones);
+   var ASIGNADAS = @json($ubicacionesAsignadas);
+   var CANTIDAD_PERSONAS = {{ (int) $reserva->cantidad_personas }};
+-  var ES_WELLNESS = {{ optional($reserva->programa)->espacio_tipo === 'wellness' ? 'true' : 'false' }};
++  var ES_WELLNESS = {{ $reserva->solo_wellness ? 'true' : 'false' }};
+ 
+   var $filas = $('#ubicaciones_filas');
+   var filaIndex = 0;
+diff --git a/resources/views/themes/backoffice/pages/visita/registrar.blade.php b/resources/views/themes/backoffice/pages/visita/registrar.blade.php
+index eed1cb9..d4cc2cd 100644
+--- a/resources/views/themes/backoffice/pages/visita/registrar.blade.php
++++ b/resources/views/themes/backoffice/pages/visita/registrar.blade.php
+@@ -342,7 +342,7 @@
+ 
+                             <input type="hidden" name="id_ubicacion" id="id_ubicacion_principal">
+ 
+-                            @if(optional($reserva->programa)->espacio_tipo === 'wellness')
++                            @if($reserva->solo_wellness)
+                             <div class="row">
+                                 <h6><strong>Terraza o Reposera</strong></h6>
+                                 <div class="col s12">
+@@ -592,7 +592,7 @@ $(document).ready(function () {
+   var UBICACIONES = @json($ubicaciones);
+   var ASIGNADAS = @json($ubicacionesAsignadas);
+   var CANTIDAD_PERSONAS = {{ (int) $reserva->cantidad_personas }};
+-  var ES_WELLNESS = {{ optional($reserva->programa)->espacio_tipo === 'wellness' ? 'true' : 'false' }};
++  var ES_WELLNESS = {{ $reserva->solo_wellness ? 'true' : 'false' }};
+ 
+   var $filas = $('#ubicaciones_filas');
+   var filaIndex = 0;
+-- 
+2.43.0
+
