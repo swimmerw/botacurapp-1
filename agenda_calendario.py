@@ -29,10 +29,11 @@ if 'la agenda la define el calendario' not in t:
 
 p = open(P, encoding='utf-8').read()
 if 'No hay una fecha fija de apertura' not in p:
-    pat = r"'regla_apertura_agenda'\s*=>\s*'.*?',(\s*'regla_eventos')"
-    if len(re.findall(pat, p, re.S)) != 1:
-        sys.exit('ERROR: no encontre el texto por defecto de regla_apertura_agenda. No se cambio nada mas.')
-    p = re.sub(pat, lambda m: "'regla_apertura_agenda' => '" + NUEVA + "'," + m.group(1), p, count=1, flags=re.S)
+    pat = r"('regla_apertura_agenda'\s*=>\s*)'APERTURA DE AGENDA \(parejas[^']*'"
+    n = len(re.findall(pat, p))
+    if n != 1:
+        sys.exit('ERROR: el texto por defecto de regla_apertura_agenda aparece %d veces. No se cambio nada mas.' % n)
+    p = re.sub(pat, lambda m: m.group(1) + "'" + NUEVA + "'", p, count=1)
     guardar(P, p)
     print('Bot: texto por defecto de apertura actualizado')
 
