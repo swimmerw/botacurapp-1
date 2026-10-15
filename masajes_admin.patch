@@ -1,0 +1,269 @@
+From fc6e9b63f7d2d15e6784ddeff83cd4068fd702df Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 18:20:16 -0300
+Subject: [PATCH] Masajes: el administrador puede editar y borrar del listado
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/Http/Controllers/MasajeController.php     |  46 ++++++-
+ .../masaje/includes/admin_editar.blade.php    | 114 ++++++++++++++++++
+ .../backoffice/pages/masaje/index.blade.php   |  23 ++++
+ routes/web.php                                |   1 +
+ 4 files changed, 182 insertions(+), 2 deletions(-)
+ create mode 100644 resources/views/themes/backoffice/pages/masaje/includes/admin_editar.blade.php
+
+diff --git a/app/Http/Controllers/MasajeController.php b/app/Http/Controllers/MasajeController.php
+index ca0a3e0..22e3d8e 100644
+--- a/app/Http/Controllers/MasajeController.php
++++ b/app/Http/Controllers/MasajeController.php
+@@ -8,6 +8,7 @@ use App\Masaje;
+ use App\PrecioTipoMasaje;
+ use App\Reserva;
+ use App\TipoMasaje;
++use App\User;
+ use Carbon\Carbon;
+ use Illuminate\Http\Request;
+ use Illuminate\Pagination\LengthAwarePaginator;
+@@ -181,7 +182,12 @@ class MasajeController extends Controller
+             'horasDisponibles' => $horariosDisponiblesMasajes,
+             'fechasPaginadas' => $todasLasFechas,
+             'contador' => $contador,
+-            'lugares' => LugarMasaje::all()
++            'lugares' => LugarMasaje::all(),
++            // Para editar el listado (solo administrador) 15/10/2026
++            'tiposMasajeLista' => TipoMasaje::orderBy('nombre')->pluck('nombre')->unique()->values(),
++            'masoterapeutasLista' => User::whereHas('roles', function ($q) {
++                $q->where('slug', config('app.masoterapeuta_role'))->orWhere('name', config('app.masoterapeuta_role'));
++            })->orderBy('name')->get(['id', 'name']),
+         ]);
+     }
+ 
+@@ -426,7 +432,43 @@ class MasajeController extends Controller
+      */
+     public function destroy($id)
+     {
+-        //
++        // Solo administrador: borrar un masaje del listado (15/10/2026)
++        abort_unless(auth()->user() && auth()->user()->has_role(config('app.admin_role')), 403);
++        $masaje = Masaje::with('reserva.cliente')->find($id);
++        if (! $masaje) {
++            return redirect()->back()->with('error', 'Masaje no encontrado');
++        }
++        $quien = optional(optional($masaje->reserva)->cliente)->nombre_cliente;
++        \Log::info('[Masajes] Borrado por administrador', [
++            'masaje' => $masaje->id, 'reserva' => $masaje->id_reserva, 'persona' => $masaje->persona,
++            'horario' => $masaje->horario_masaje, 'user' => auth()->id(),
++        ]);
++        $masaje->delete();
++
++        return redirect()->back()->with('success', 'Masaje eliminado' . ($quien ? ' (' . $quien . ')' : '') . '.');
++    }
++
++    /** Solo administrador: editar horario, tipo, lugar, tiempo extra y masoterapeuta (15/10/2026). */
++    public function adminUpdate(Request $request, Masaje $masaje)
++    {
++        abort_unless(auth()->user() && auth()->user()->has_role(config('app.admin_role')), 403);
++        $data = $request->validate([
++            'horario_masaje'  => ['nullable', 'date_format:H:i'],
++            'tipo_masaje'     => ['nullable', 'string', 'max:100'],
++            'id_lugar_masaje' => ['required', 'exists:lugares_masajes,id'],
++            'user_id'         => ['nullable', 'exists:users,id'],
++            'persona'         => ['required', 'integer', 'min:1', 'max:200'],
++        ]);
++        $masaje->update([
++            'horario_masaje'  => $data['horario_masaje'] ?? null,
++            'tipo_masaje'     => $data['tipo_masaje'] ?? null,
++            'id_lugar_masaje' => (int) $data['id_lugar_masaje'],
++            'user_id'         => $data['user_id'] ?? null,
++            'persona'         => (int) $data['persona'],
++            'tiempo_extra'    => $request->boolean('tiempo_extra'),
++        ]);
++
++        return redirect()->back()->with('success', 'Masaje actualizado.');
+     }
+ 
+     public function asignar_multiples(Request $request)
+diff --git a/resources/views/themes/backoffice/pages/masaje/includes/admin_editar.blade.php b/resources/views/themes/backoffice/pages/masaje/includes/admin_editar.blade.php
+new file mode 100644
+index 0000000..1d77597
+--- /dev/null
++++ b/resources/views/themes/backoffice/pages/masaje/includes/admin_editar.blade.php
+@@ -0,0 +1,114 @@
++{{-- Editar / borrar masajes del listado: solo administrador (15/10/2026) --}}
++<div id="modal-masaje-admin" class="modal">
++  <form id="form-masaje-admin" method="POST" action="">
++    @csrf
++    @method('PUT')
++    <div class="modal-content">
++      <h5>Editar masaje <small id="masaje-admin-cliente" class="grey-text"></small></h5>
++      <div class="row">
++        <div class="col s6 m4">
++          <label>Hora de inicio</label>
++          <input type="time" step="600" name="horario_masaje" id="masaje-admin-horario">
++          <small class="grey-text">Vacío = sin horario</small>
++        </div>
++        <div class="col s6 m4">
++          <label>Persona N°</label>
++          <input type="number" min="1" name="persona" id="masaje-admin-persona" required>
++        </div>
++        <div class="col s12 m4" style="padding-top:22px">
++          <label>
++            <input type="checkbox" name="tiempo_extra" value="1" id="masaje-admin-extra">
++            <span>Tiempo extra (60 min)</span>
++          </label>
++        </div>
++      </div>
++      <div class="row">
++        <div class="col s12 m4">
++          <label>Tipo de masaje</label>
++          <select class="browser-default" name="tipo_masaje" id="masaje-admin-tipo">
++            <option value="">-- Sin tipo --</option>
++            @foreach (($tiposMasajeLista ?? collect()) as $t)
++              <option value="{{ $t }}">{{ $t }}</option>
++            @endforeach
++          </select>
++        </div>
++        <div class="col s12 m4">
++          <label>Lugar</label>
++          <select class="browser-default" name="id_lugar_masaje" id="masaje-admin-lugar" required>
++            @foreach ($lugares as $l)
++              <option value="{{ $l->id }}">{{ $l->nombre }}</option>
++            @endforeach
++          </select>
++        </div>
++        <div class="col s12 m4">
++          <label>Masoterapeuta</label>
++          <select class="browser-default" name="user_id" id="masaje-admin-user">
++            <option value="">-- No asignado --</option>
++            @foreach (($masoterapeutasLista ?? collect()) as $u)
++              <option value="{{ $u->id }}">{{ $u->name }}</option>
++            @endforeach
++          </select>
++        </div>
++      </div>
++    </div>
++    <div class="modal-footer">
++      <a href="#!" class="modal-close modal-action btn-flat">Cancelar</a>
++      <button type="submit" class="btn waves-effect">Guardar</button>
++    </div>
++  </form>
++</div>
++
++<div id="modal-masaje-borrar" class="modal">
++  <form id="form-masaje-borrar" method="POST" action="">
++    @csrf
++    @method('DELETE')
++    <div class="modal-content">
++      <h5>¿Borrar este masaje?</h5>
++      <p id="masaje-borrar-texto"></p>
++      <p class="grey-text">Se quita del listado. Si era un masaje extra ya cobrado, el cobro no cambia.</p>
++    </div>
++    <div class="modal-footer">
++      <a href="#!" class="modal-close modal-action btn-flat">Cancelar</a>
++      <button type="submit" class="btn red waves-effect">Borrar</button>
++    </div>
++  </form>
++</div>
++
++<script>
++  document.addEventListener('DOMContentLoaded', function () {
++    var $ = window.jQuery;
++    var abrir = function (id) {
++      if ($ && $.fn.modal) { $(id).modal(); $(id).modal('open'); }
++      else { document.querySelector(id).style.display = 'block'; }
++    };
++    var setSel = function (el, v) {
++      el.value = v || '';
++      if (v && el.value !== String(v)) { // valor que no esta en la lista: se agrega
++        var o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o); el.value = v;
++      }
++    };
++    document.addEventListener('click', function (e) {
++      var ed = e.target.closest('.masaje-editar');
++      if (ed) {
++        e.preventDefault();
++        document.getElementById('form-masaje-admin').action = ed.dataset.url;
++        document.getElementById('masaje-admin-cliente').textContent = ed.dataset.cliente || '';
++        document.getElementById('masaje-admin-horario').value = ed.dataset.horario || '';
++        document.getElementById('masaje-admin-persona').value = ed.dataset.persona || 1;
++        document.getElementById('masaje-admin-extra').checked = ed.dataset.extra === '1';
++        setSel(document.getElementById('masaje-admin-tipo'), ed.dataset.tipo);
++        document.getElementById('masaje-admin-lugar').value = ed.dataset.lugar || '';
++        document.getElementById('masaje-admin-user').value = ed.dataset.user || '';
++        abrir('#modal-masaje-admin');
++        return;
++      }
++      var bo = e.target.closest('.masaje-borrar');
++      if (bo) {
++        e.preventDefault();
++        document.getElementById('form-masaje-borrar').action = bo.dataset.url;
++        document.getElementById('masaje-borrar-texto').textContent = bo.dataset.texto || '';
++        abrir('#modal-masaje-borrar');
++      }
++    });
++  });
++</script>
+diff --git a/resources/views/themes/backoffice/pages/masaje/index.blade.php b/resources/views/themes/backoffice/pages/masaje/index.blade.php
+index 291a5c0..abd6fca 100644
+--- a/resources/views/themes/backoffice/pages/masaje/index.blade.php
++++ b/resources/views/themes/backoffice/pages/masaje/index.blade.php
+@@ -60,6 +60,9 @@
+                         <th>Lugar Masajes</th>
+                         <th>Estado</th>
+                         <th>Asignación</th>
++                        @if (Auth::user()->has_role(config('app.admin_role')))
++                            <th>Acciones</th>
++                        @endif
+                     </tr>
+                 </thead>
+ 
+@@ -137,6 +140,22 @@
+                                         @endif
+                                     @endif
+                                 </td>
++                                @if (Auth::user()->has_role(config('app.admin_role')))
++                                    <td style="white-space:nowrap">
++                                        <a href="#!" class="btn-floating btn-small blue masaje-editar" title="Editar"
++                                           data-url="{{ route('backoffice.masaje.admin_update', $masaje->id) }}"
++                                           data-horario="{{ $masaje->horario_masaje ? substr($masaje->horario_masaje,0,5) : '' }}"
++                                           data-tipo="{{ $masaje->tipo_masaje }}"
++                                           data-lugar="{{ $masaje->id_lugar_masaje }}"
++                                           data-user="{{ $masaje->user_id }}"
++                                           data-persona="{{ $masaje->persona }}"
++                                           data-extra="{{ $masaje->tiempo_extra ? 1 : 0 }}"
++                                           data-cliente="{{ optional($masaje->reserva->cliente)->nombre_cliente }}"><i class="material-icons">edit</i></a>
++                                        <a href="#!" class="btn-floating btn-small red masaje-borrar" title="Borrar"
++                                           data-url="{{ route('backoffice.masaje.destroy', $masaje->id) }}"
++                                           data-texto="{{ optional($masaje->reserva->cliente)->nombre_cliente }} - Persona {{ $masaje->persona }}{{ $masaje->horario_masaje ? ' - '.substr($masaje->horario_masaje,0,5) : '' }}"><i class="material-icons">delete</i></a>
++                                    </td>
++                                @endif
+                             </tr>
+                         @endforeach
+                     @endforeach
+@@ -164,6 +183,10 @@
+ 
+     </div>
+ 
++    @if (Auth::user()->has_role(config('app.admin_role')))
++        @include('themes.backoffice.pages.masaje.includes.admin_editar')
++    @endif
++
+     <div class="col s12">
+         <div class="card-panel">
+             @include('themes.backoffice.pages.masaje.includes.horarios_disponibles')
+diff --git a/routes/web.php b/routes/web.php
+index fcabac2..6b3beae 100755
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -592,6 +592,7 @@ Route::group(['middleware' => ['auth'], 'as' => 'backoffice.'], function () {
+     Route::match(['put', 'patch'], 'reserva/{reserva}/desayuno_once_update', 'ReservaController@desayunoOnceUpdate')->name('reserva.desayuno_once_update');
+ 
+     Route::post('/masajes/asignar_multiples', 'MasajeController@asignar_multiples')->name('masaje.asignar_multiples');
++    Route::match(['put', 'patch'], 'masajes/{masaje}/admin', 'MasajeController@adminUpdate')->name('masaje.admin_update');
+ 
+     Route::get('masajes/valores', 'MasajeController@index_valor')->name('masajes.valores');
+     Route::get('masajes/valores/create', 'MasajeController@valor_masaje_create')->name('masajes.valores.create');
+-- 
+2.43.0
+
