@@ -1,0 +1,224 @@
+From 93b787b1b3bebbd848110dc5570a33d787e40091 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 18:23:00 -0300
+Subject: [PATCH] Varios programas: desayuno/once por programa y detalle en la
+ boleta
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/Http/Controllers/MenuController.php       |  6 +--
+ app/Http/Controllers/ReservaController.php    |  6 ++-
+ app/Jobs/ProcesarVentaCerrada.php             |  6 ++-
+ app/Reserva.php                               | 38 +++++++++++++++++++
+ app/Services/DesayunoOnceService.php          |  9 +++++
+ .../pdf/consumo_separado/viewPDF.blade.php    | 11 ++++++
+ resources/views/pdf/venta/viewPDF.blade.php   | 11 ++++++
+ .../pages/reserva/index_registro.blade.php    |  4 +-
+ 8 files changed, 82 insertions(+), 9 deletions(-)
+
+diff --git a/app/Http/Controllers/MenuController.php b/app/Http/Controllers/MenuController.php
+index c5f51dc..dae6713 100644
+--- a/app/Http/Controllers/MenuController.php
++++ b/app/Http/Controllers/MenuController.php
+@@ -184,9 +184,9 @@ class MenuController extends Controller
+ 
+             foreach ($reserva->desayunoOnce as $item) {
+                 if ($item->tipo === 'desayuno') {
+-                    $desayunos += (int) ($reserva->cantidad_personas ?? 0);
++                    $desayunos += $reserva->personasDesayunoOnce();
+                 } elseif ($item->tipo === 'once') {
+-                    $onces += (int) ($reserva->cantidad_personas ?? 0);
++                    $onces += $reserva->personasDesayunoOnce();
+                 }
+             }
+         }
+@@ -204,7 +204,7 @@ class MenuController extends Controller
+                 'id' => $r->id,
+                 'cliente' => $r->cliente ? $r->cliente->nombre_cliente : 'Sin cliente',
+                 'cantidad_personas' => $r->cantidad_personas ?? 0,
+-                'programa' => $r->programa ? $r->programa->nombre_programa : 'Sin programa',
++                'programa' => $r->programa ? $r->programas_texto : 'Sin programa',
+                 'observacion_reserva' => $r->observacion ?? 'Sin Observaciones',
+                 'avisado_en_cocina' => $r->avisado_en_cocina,
+                 'avisar_url' => route('backoffice.reserva.avisar', $r->id), // (sin backoffice, por tu prefix)
+diff --git a/app/Http/Controllers/ReservaController.php b/app/Http/Controllers/ReservaController.php
+index 9253f28..d0c2f91 100644
+--- a/app/Http/Controllers/ReservaController.php
++++ b/app/Http/Controllers/ReservaController.php
+@@ -1446,7 +1446,8 @@ class ReservaController extends Controller
+             'numero'        => $reserva->cliente->whatsapp_cliente,
+             'observacion'   => $reserva->observacion ? $reserva->observacion : 'Sin Observaciones',
+             'fecha_visita'  => $reserva->fecha_visita,
+-            'programa'      => $reserva->programa->nombre_programa,
++            'programa'      => $reserva->programas_texto,
++            'detalleProgramas' => $reserva->detalleProgramasBoleta(),
+             'personas'      => $reserva->cantidad_personas,
+             'menus'         => $menus,
+             'consumo'      => $consumo,
+@@ -1511,7 +1512,8 @@ class ReservaController extends Controller
+             'numero'        => $reserva->cliente->whatsapp_cliente,
+             'observacion'   => $reserva->observacion ? $reserva->observacion : 'Sin Observaciones',
+             'fecha_visita'  => $reserva->fecha_visita,
+-            'programa'      => $reserva->programa->nombre_programa,
++            'programa'      => $reserva->programas_texto,
++            'detalleProgramas' => $reserva->detalleProgramasBoleta(),
+             'personas'      => $reserva->cantidad_personas,
+             'consumo'      => $consumo,
+             'venta'         => $reserva->venta,
+diff --git a/app/Jobs/ProcesarVentaCerrada.php b/app/Jobs/ProcesarVentaCerrada.php
+index 5ab3ab7..2a506d6 100644
+--- a/app/Jobs/ProcesarVentaCerrada.php
++++ b/app/Jobs/ProcesarVentaCerrada.php
+@@ -51,7 +51,8 @@ class ProcesarVentaCerrada implements ShouldQueue
+             'numero'        => $reserva->cliente->whatsapp_cliente,
+             'observacion'   => $reserva->observacion ?? 'Sin Observaciones',
+             'fecha_visita'  => $reserva->fecha_visita,
+-            'programa'      => $reserva->programa->nombre_programa,
++            'programa'      => $reserva->programas_texto,
++            'detalleProgramas' => $reserva->detalleProgramasBoleta(),
+             'personas'      => $reserva->cantidad_personas,
+             'menus'         => $reserva->menus,
+             'consumo'       => $consumo,
+@@ -82,7 +83,8 @@ class ProcesarVentaCerrada implements ShouldQueue
+                 'numero'        => $reserva->cliente->whatsapp_cliente,
+                 'observacion'   => $reserva->observacion ?? 'Sin Observaciones',
+                 'fecha_visita'  => $reserva->fecha_visita,
+-                'programa'      => $reserva->programa->nombre_programa,
++                'programa'      => $reserva->programas_texto,
++            'detalleProgramas' => $reserva->detalleProgramasBoleta(),
+                 'personas'      => $reserva->cantidad_personas,
+                 'consumo'       => $consumo,
+                 'pagoConsumo'   => $pagoConsumo,
+diff --git a/app/Reserva.php b/app/Reserva.php
+index 746a458..6a8132e 100644
+--- a/app/Reserva.php
++++ b/app/Reserva.php
+@@ -157,6 +157,44 @@ class Reserva extends Model
+         });
+     }
+ 
++    /**
++     * Personas que comen desayuno/once segun sus programas. Con un solo programa
++     * (o si el desayuno/once se agrego aparte) son todas las personas de la reserva.
++     */
++    public function personasDesayunoOnce(): int
++    {
++        $d = $this->detalleProgramas();
++        if ($d->count() <= 1) {
++            return (int) $this->cantidad_personas;
++        }
++        $n = (int) $d->sum(function ($p) {
++            $incluye = $p->programa && $p->programa->servicios->contains(function ($s) {
++                $x = mb_strtolower($s->nombre_servicio);
++                return strpos($x, 'desayuno') !== false || strpos($x, 'once') !== false;
++            });
++            return $incluye ? $p->personas : 0;
++        });
++        return $n > 0 ? $n : (int) $this->cantidad_personas;
++    }
++
++    /** Para la boleta: [['nombre','personas','valor','subtotal'], ...] o null si es un solo programa. */
++    public function detalleProgramasBoleta(): ?array
++    {
++        $d = $this->detalleProgramas();
++        if ($d->count() <= 1) {
++            return null;
++        }
++        return $d->map(function ($p) {
++            $valor = (int) ($p->valor_unitario ?? optional($p->programa)->valor_programa);
++            return [
++                'nombre'   => (string) optional($p->programa)->nombre_programa,
++                'personas' => (int) $p->personas,
++                'valor'    => $valor,
++                'subtotal' => $valor * (int) $p->personas,
++            ];
++        })->values()->all();
++    }
++
+     /** Nombres de servicios de todos los programas de la reserva (sin repetir). */
+     public function serviciosNombres(): array
+     {
+diff --git a/app/Services/DesayunoOnceService.php b/app/Services/DesayunoOnceService.php
+index 4ab9e0a..10bfdef 100644
+--- a/app/Services/DesayunoOnceService.php
++++ b/app/Services/DesayunoOnceService.php
+@@ -96,6 +96,15 @@ class DesayunoOnceService
+ 
+     public static function incluye($reserva): bool
+     {
++        if ($reserva instanceof \App\Reserva) {
++            foreach ($reserva->serviciosNombres() as $n) {
++                $n = mb_strtolower($n);
++                if (strpos($n, 'desayuno') !== false || strpos($n, 'once') !== false) {
++                    return true;
++                }
++            }
++            return false;
++        }
+         $p = $reserva->programa ?? null;
+         return $p && $p->servicios->contains(function ($s) {
+             $n = mb_strtolower($s->nombre_servicio);
+diff --git a/resources/views/pdf/consumo_separado/viewPDF.blade.php b/resources/views/pdf/consumo_separado/viewPDF.blade.php
+index 79db513..b3cfe38 100644
+--- a/resources/views/pdf/consumo_separado/viewPDF.blade.php
++++ b/resources/views/pdf/consumo_separado/viewPDF.blade.php
+@@ -45,6 +45,17 @@
+     <div>
+         <h5 class="primario">Información de Reserva</h5>
+         <h6 class="left"><span class="primario">Programa:</span> {{$programa}}</h6>
++            @if (!empty($detalleProgramas))
++                <table style="width:100%; font-size:12px; margin:4px 0 8px 0">
++                    @foreach ($detalleProgramas as $dp)
++                        <tr>
++                            <td>{{ $dp['nombre'] }}</td>
++                            <td style="text-align:center">{{ $dp['personas'] }} × ${{ number_format($dp['valor'],0,'','.') }}</td>
++                            <td style="text-align:right">${{ number_format($dp['subtotal'],0,'','.') }}</td>
++                        </tr>
++                    @endforeach
++                </table>
++            @endif
+         <h6 class="right "><span class="primario">Observación:</span> {{$observacion}}</h6>
+         <h6 class="center"><span class="primario">Cantidad de asistentes:</span> {{$personas}} personas</h6>
+     </div>
+diff --git a/resources/views/pdf/venta/viewPDF.blade.php b/resources/views/pdf/venta/viewPDF.blade.php
+index ba7206c..340d3b2 100644
+--- a/resources/views/pdf/venta/viewPDF.blade.php
++++ b/resources/views/pdf/venta/viewPDF.blade.php
+@@ -46,6 +46,17 @@
+         <div>
+             <h5 class="primario">Información de Reserva</h5>
+             <h6 class="left"><span class="primario">Programa:</span> {{$programa}}</h6>
++            @if (!empty($detalleProgramas))
++                <table style="width:100%; font-size:12px; margin:4px 0 8px 0">
++                    @foreach ($detalleProgramas as $dp)
++                        <tr>
++                            <td>{{ $dp['nombre'] }}</td>
++                            <td style="text-align:center">{{ $dp['personas'] }} × ${{ number_format($dp['valor'],0,'','.') }}</td>
++                            <td style="text-align:right">${{ number_format($dp['subtotal'],0,'','.') }}</td>
++                        </tr>
++                    @endforeach
++                </table>
++            @endif
+             {{-- <h6 class="right "><span class="primario">Observación:</span> {{$observacion}}</h6> --}}
+             <h6 class="right"><span class="primario">Abono: </span> ${{number_format($venta->abono_programa,0,'','.')}}</h6>
+             <h6 class="center"><span class="primario">Cantidad de asistentes:</span> {{$personas}} {{($personas >= 2) ? 'personas' : 'persona'}}</h6>
+diff --git a/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php b/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
+index 37f7aa8..899046f 100644
+--- a/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
+@@ -176,9 +176,9 @@
+                       foreach ($reservas as $reservaBuffet) {
+                           foreach ($reservaBuffet->desayunoOnce as $itemBuffet) {
+                               if ($itemBuffet->tipo === 'desayuno') {
+-                                  $totalDesayunos += (int) ($reservaBuffet->cantidad_personas ?? 0);
++                                  $totalDesayunos += $reservaBuffet->personasDesayunoOnce();
+                               } elseif ($itemBuffet->tipo === 'once') {
+-                                  $totalOnces += (int) ($reservaBuffet->cantidad_personas ?? 0);
++                                  $totalOnces += $reservaBuffet->personasDesayunoOnce();
+                               }
+                           }
+                       }
+-- 
+2.43.0
+
