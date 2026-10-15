@@ -11,21 +11,21 @@ echo "Respaldo: $R"
 sudo docker exec -i homeassistant python3 - <<'PY'
 import glob, yaml
 REGLAS = [  # (palabras en el nombre/id, etiqueta) - el primero que calce
-    (('sos',), '🆘 SOS'),
-    (('gas',), '🔥 GAS'),
-    (('piscina',), '🏊 PISCINA'),
-    (('jardin', 'jardín', 'ji ', 'ji_', 'cultivo', 'c1', 'c3'), '🌿 JARDÍN'),
-    (('agua', 'riego', 'estanque'), '💧 AGUA'),
-    (('botacurapp',), '🤖 APP'),
-    (('tinaja', 'sauna', 'calefont'), '♨️ TINAJAS'),
+    (('sos',), 'SOS 🆘'),
+    (('gas',), 'GAS 🔥'),
+    (('piscina',), 'PISCINA 🏊'),
+    (('jardin', 'jardín', 'ji ', 'ji_', 'cultivo', 'c1', 'c3'), 'JARDÍN 🌿'),
+    (('agua', 'riego', 'estanque'), 'AGUA 💧'),
+    (('botacurapp',), 'APP 🤖'),
+    (('tinaja', 'sauna', 'calefont'), 'TINAJAS ♨️'),
 ]
-ETIQUETAS = [e for _, e in REGLAS] + ['⚙️ SISTEMA']
+ETIQUETAS = [e for _, e in REGLAS] + ['SISTEMA ⚙️', '🆘', '🔥', '🏊', '🌿', '💧', '♨', '🤖', '⚙']
 def etiqueta(auto):
     t = (str(auto.get('alias', '')) + ' ' + str(auto.get('id', ''))).lower()
     for palabras, e in REGLAS:
         if any(p in t for p in palabras):
             return e
-    return '⚙️ SISTEMA'
+    return 'SISTEMA ⚙️'
 def recorrer(nodo, e, cambios):
     if isinstance(nodo, list):
         for x in nodo:
@@ -35,7 +35,7 @@ def recorrer(nodo, e, cambios):
         if acc in ('rest_command.whatsapp_alerta', 'rest_command.whatsapp_alerta_2') and isinstance(nodo.get('data'), dict) and 'mensaje' in nodo['data']:
             m = str(nodo['data']['mensaje'])
             if not any(m.lstrip().startswith(x) for x in ETIQUETAS):
-                nodo['data']['mensaje'] = e + ' | ' + m.lstrip()
+                nodo['data']['mensaje'] = e + '| ' + m.lstrip()
                 cambios.append(acc)
         for k, v in nodo.items():
             if k != 'data':
