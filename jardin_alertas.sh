@@ -17,7 +17,7 @@ DEST=$C/archivo_viejo/jardin_$(date +%Y%m%d)
 sudo tee $NUEVO >/dev/null <<'YML'
 id: jardin_interior_alertas_ambiente
 alias: Jardin interior | Alertas de humedad, CO2 y temperatura
-description: Rangos - humedad 40-55%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 60 min, maximo 25 avisos al dia.
+description: Rangos - humedad 40-69,9%, CO2 400-1500 ppm, temperatura 20-28 C. Aviso al salir del rango y recordatorio cada 60 min, maximo 25 avisos al dia.
 mode: queued
 max: 5
 triggers:
@@ -31,7 +31,7 @@ triggers:
     for: {minutes: 10}
   - trigger: numeric_state
     entity_id: sensor.sonoff_1002986d6a_humidity
-    above: 55
+    above: 69.9
     for: {minutes: 10}
   - trigger: numeric_state
     entity_id: sensor.sonoff_1002986d6a_humidity
@@ -74,8 +74,8 @@ actions:
           {% elif t < 20 %}{% set ns.l = ns.l + ['temperatura baja ' ~ t ~ ' C (rango 20-28)'] %}{% endif %}
         {% endif %}
         {% if h | is_number %}{% set h = h | float %}
-          {% if h > 55 %}{% set ns.l = ns.l + ['humedad alta ' ~ h ~ '% (rango 40-55)'] %}
-          {% elif h < 40 %}{% set ns.l = ns.l + ['humedad baja ' ~ h ~ '% (rango 40-55)'] %}{% endif %}
+          {% if h > 69.9 %}{% set ns.l = ns.l + ['humedad alta ' ~ h ~ '% (rango 40-69,9)'] %}
+          {% elif h < 40 %}{% set ns.l = ns.l + ['humedad baja ' ~ h ~ '% (rango 40-69,9)'] %}{% endif %}
         {% endif %}
         {% if c | is_number %}{% set c = c | float | round(0) | int %}
           {% if c > 1500 %}{% set ns.l = ns.l + ['CO2 alto ' ~ c ~ ' ppm (rango 400-1500, ventilar)'] %}
@@ -155,4 +155,4 @@ if grep -qiE "Failed config|Invalid config" /tmp/check_ha.txt; then
   exit 1
 fi
 sudo docker restart homeassistant >/dev/null
-echo "LISTO: alertas del jardin interior creadas (humedad 40-55%, CO2 400-1500 ppm, T 20-28 C, luces C1-C4). Home Assistant reiniciado."
+echo "LISTO: alertas del jardin interior creadas (humedad 40-69,9%, CO2 400-1500 ppm, T 20-28 C, luces C1-C4). Home Assistant reiniciado."
