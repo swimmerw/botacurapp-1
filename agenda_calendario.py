@@ -32,10 +32,11 @@ if 'No hay una fecha fija de apertura' not in p:
     pat = r"('regla_apertura_agenda'\s*=>\s*)'APERTURA DE AGENDA \(parejas[^']*'"
     n = len(re.findall(pat, p))
     if n != 1:
-        sys.exit('ERROR: el texto por defecto de regla_apertura_agenda aparece %d veces. No se cambio nada mas.' % n)
-    p = re.sub(pat, lambda m: m.group(1) + "'" + NUEVA + "'", p, count=1)
-    guardar(P, p)
-    print('Bot: texto por defecto de apertura actualizado')
+        print('AVISO: el texto por defecto de regla_apertura_agenda aparece %d veces; no se toco (el bot usa el texto guardado en la base, que si se actualiza).' % n)
+    else:
+        p = re.sub(pat, lambda m: m.group(1) + "'" + NUEVA + "'", p, count=1)
+        guardar(P, p)
+        print('Bot: texto por defecto de apertura actualizado')
 
 c = open(C, encoding='utf-8').read()
 if 'campo vacio = texto vacio' not in c:
