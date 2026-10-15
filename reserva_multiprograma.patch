@@ -1,0 +1,1015 @@
+From c1ea1f65946f2d12fa141201feeec6a000139263 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 16:01:18 -0300
+Subject: [PATCH] Reservas con varios programas y menus/masajes ajustados a las
+ personas
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/Http/Controllers/ReservaController.php    |  49 ++++-
+ app/Http/Controllers/VisitaController.php     |  49 ++---
+ app/Reserva.php                               |  78 ++++++++
+ app/ReservaPrograma.php                       |  31 +++
+ app/Services/ReservaProgramasService.php      | 184 ++++++++++++++++++
+ ..._000001_create_reserva_programas_table.php |  34 ++++
+ resources/views/emails/reserva.blade.php      |   2 +-
+ .../admin/finanzas/detalle-dia.blade.php      |   2 +-
+ .../backoffice/pages/reserva/create.blade.php |   4 +-
+ .../backoffice/pages/reserva/edit.blade.php   |   6 +-
+ .../includes/programas_extra.blade.php        | 113 +++++++++++
+ .../pages/reserva/index_all.blade.php         |   6 +-
+ .../pages/reserva/index_registro.blade.php    |   2 +-
+ .../pages/reserva/screens/mobile.blade.php    |   4 +-
+ .../pages/reserva/screens/principal.blade.php |  12 +-
+ .../backoffice/pages/reserva/show.blade.php   |   2 +-
+ 16 files changed, 525 insertions(+), 53 deletions(-)
+ create mode 100644 app/ReservaPrograma.php
+ create mode 100644 app/Services/ReservaProgramasService.php
+ create mode 100644 database/migrations/2026_10_15_000001_create_reserva_programas_table.php
+ create mode 100644 resources/views/themes/backoffice/pages/reserva/includes/programas_extra.blade.php
+
+diff --git a/app/Http/Controllers/ReservaController.php b/app/Http/Controllers/ReservaController.php
+index c6a8230..9253f28 100644
+--- a/app/Http/Controllers/ReservaController.php
++++ b/app/Http/Controllers/ReservaController.php
+@@ -19,6 +19,8 @@ use App\Programa;
+ use App\Propina;
+ use App\Reagendamiento;
+ use App\Reserva;
++use App\ReservaPrograma;
++use App\Services\ReservaProgramasService;
+ use App\ReservaDesayunoOnce;
+ use App\Servicio;
+ use App\TipoMasaje;
+@@ -766,6 +768,12 @@ class ReservaController extends Controller
+                     $reserva->update(['cantidad_masajes' => null]);
+                 }
+ 
++                // Programas adicionales en la misma reserva (15/10/2026)
++                $extrasProgramas = ReservaProgramasService::extrasDesdeRequest($request);
++                if ($extrasProgramas) {
++                    ReservaProgramasService::guardar($reserva, (int) $request->id_programa, (int) $request->cantidad_personas, $extrasProgramas);
++                }
++
+ 
+                 // Crear la venta relacionada con la reserva
+                 $venta = Venta::create([
+@@ -1095,6 +1103,9 @@ class ReservaController extends Controller
+             $cursor->addDay();
+         }
+ 
++        $detalleProg   = $reserva->detalleProgramas();
++        $principalProg = $detalleProg->count() > 1 ? $detalleProg->firstWhere('principal', true) : null;
++
+         // dd(!$reserva->programa->servicios->contains('nombre_servicio', 'Masaje') && $visita->horario_masaje);
+         return view('themes.backoffice.pages.reserva.edit', [
+             'reserva'                => $reserva,
+@@ -1105,8 +1116,12 @@ class ReservaController extends Controller
+             'visita'                 => $visita,
+             'cantidadMasaje'         => $cantidadExtraMasaje,
+             'fechasDeshabilitadas'   => $fechasDeshabilitadas,
+-            'precioUnitarioOriginal' => $this->precioUnitarioOriginal($reserva, $venta, (int) $reserva->cantidad_personas),
++            'precioUnitarioOriginal' => $principalProg && $principalProg->valor_unitario
++                ? (float) $principalProg->valor_unitario
++                : $this->precioUnitarioOriginal($reserva, $venta, (int) $reserva->cantidad_personas),
+             'abonosExtraVenta'       => (int) $venta->abonosExtra()->sum('monto'),
++            'personasPrincipal'      => $principalProg ? (int) $principalProg->personas : (int) $reserva->cantidad_personas,
++            'programasExtra'         => $detalleProg->where('principal', false)->values(),
+         ]);
+     }
+ 
+@@ -1145,15 +1160,19 @@ class ReservaController extends Controller
+             }
+         }
+ 
++        // Programas adicionales (15/10/2026)
++        $extrasNuevos    = ReservaProgramasService::extrasDesdeRequest($request);
++        $extrasCambiaron = $extrasNuevos != ReservaProgramasService::extrasGuardados($reserva);
++
+         // Verificar si hubo cambios
+-        if (! $changes) {
++        if (! $changes && ! $extrasCambiaron) {
+             // Si no hay cambios, redirigir a otra ruta
+             return redirect()->route('backoffice.reserva.show', ['reserva' => $reserva->id])->with('info', 'No se realizaron cambios en la reserva.');
+         }
+ 
+         // Si hay cambios, continuar con la lógica normal
+         try {
+-            DB::transaction(function () use ($request, &$reserva, $originalArray, &$masajesExtra, &$almuerzosExtra) {
++            DB::transaction(function () use ($request, &$reserva, $originalArray, &$masajesExtra, &$almuerzosExtra, $extrasNuevos, $extrasCambiaron) {
+ 
+                 // dd($originalArray['fecha_visita'] ,$request->input('fecha_visita'));
+                 if ($originalArray['fecha_visita'] !== $request->input('fecha_visita')) {
+@@ -1188,6 +1207,17 @@ class ReservaController extends Controller
+                     $reserva->update(['cantidad_masajes' => null]);
+                 }
+ 
++                // Varios programas: guarda el detalle y calcula el monto (15/10/2026)
++                $montoProgramas = null;
++                $teniaVarios    = ReservaPrograma::where('id_reserva', $reserva->id)->exists();
++                if ($extrasNuevos || $teniaVarios) {
++                    $valorPrincipal = null;
++                    if (! $teniaVarios && $reserva->venta && (int) ($originalArray['id_programa'] ?? 0) === (int) $request->id_programa) {
++                        $valorPrincipal = $this->precioUnitarioOriginal($reserva, $reserva->venta, (int) ($originalArray['cantidad_personas'] ?? 0));
++                    }
++                    $montoProgramas = ReservaProgramasService::guardar($reserva, (int) $request->id_programa, (int) $request->cantidad_personas, $extrasNuevos, $valorPrincipal);
++                }
++
+                 // Actualizar la venta relacionada con la reserva
+                 $venta = $reserva->venta ?? new Venta();
+ 
+@@ -1216,6 +1246,12 @@ class ReservaController extends Controller
+                         - (int) $venta->abonosExtra()->sum('monto');
+                 }
+ 
++                if ($montoProgramas !== null && ($totalRecalculado || $extrasCambiaron)) {
++                    $totalPagar = $montoProgramas
++                        - (int) $request->abono_programa
++                        - (int) $venta->abonosExtra()->sum('monto');
++                }
++
+                 $venta->fill([
+                     'abono_programa'            => $request->abono_programa,
+                     'folio_abono'              => $folio_abono ?? $venta->folio_abono,
+@@ -1233,6 +1269,9 @@ class ReservaController extends Controller
+                     $almuerzosExtra = $request->filled('agregar_almuerzos');
+                     $this->manipularAlmuerzosExtra($request, $venta);
+                 }
++
++                // Menus y masajes siempre acordes a la cantidad de personas (15/10/2026)
++                ReservaProgramasService::ajustarMenusYMasajes($reserva);
+             });
+ 
+             session()->put([
+@@ -1242,7 +1281,7 @@ class ReservaController extends Controller
+ 
+             $camposQueAfectanVisita = ['id_programa', 'cantidad_personas', 'fecha_visita', 'cantidad_masajes_extra'];
+             $afectaVisita           = count(array_intersect(array_keys($changes), $camposQueAfectanVisita)) > 0
+-                || $request->filled('agregar_almuerzos');
++                || $request->filled('agregar_almuerzos') || $extrasCambiaron;
+ 
+             if (! $afectaVisita) {
+                 return redirect()->route('backoffice.reserva.show', ['reserva' => $reserva->id])->with('success', 'La reserva fue actualizada exitosamente.');
+@@ -1299,7 +1338,7 @@ class ReservaController extends Controller
+     {
+         $core = ! is_null($visita->id_ubicacion) || ! is_null($visita->horario_sauna);
+ 
+-        $servicios            = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $servicios            = $reserva->serviciosNombres();
+         $requiereDesayunoOnce = in_array('Desayuno y Once', $servicios) || in_array('Desayuno u Once', $servicios);
+         $desayunoOnceOk       = ! $requiereDesayunoOnce || $reserva->desayunoOnce()->exists();
+ 
+diff --git a/app/Http/Controllers/VisitaController.php b/app/Http/Controllers/VisitaController.php
+index b2dc1c4..b69a096 100644
+--- a/app/Http/Controllers/VisitaController.php
++++ b/app/Http/Controllers/VisitaController.php
+@@ -95,12 +95,7 @@ class VisitaController extends Controller
+         $cantidadMasajesExtra = (int) ($reserva->cantidad_masajes_extra ?? 0);
+ 
+         // Incluye masaje en el programa (acepta "Masaje" o "Masajes")
+-        $incluyeMasajePrograma = $reserva->programa
+-        && $reserva->programa->servicios
+-        && $reserva->programa->servicios->contains(function ($s) {
+-            $nombre = mb_strtolower(trim($s->nombre_servicio));
+-            return in_array($nombre, ['masaje', 'masajes']);
+-        });
++        $incluyeMasajePrograma = $reserva->personasConMasaje() > 0;
+ 
+                             // Regla: nunca ambos a la vez
+         $modoMasaje = null; // 'extra' | 'programa' | null
+@@ -122,7 +117,7 @@ class VisitaController extends Controller
+             $cantidadSlotsMasaje = (int) ceil(((int) $reserva->cantidad_personas) / 2);
+         }
+ 
+-        $serviciosDisponibles = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosDisponibles = $reserva->serviciosNombres();
+ 
+         // Obtenemos la fecha seleccionada del formulario
+         // $fechaSeleccionada   = \Carbon\Carbon::createFromFormat('d-m-Y', $reserva->fecha_visita)->format('Y-m-d');
+@@ -459,12 +454,7 @@ class VisitaController extends Controller
+         $cantidadMasajesExtra = (int) ($reserva->cantidad_masajes_extra ?? 0);
+ 
+         // Incluye masaje en el programa (acepta "Masaje" o "Masajes")
+-        $incluyeMasajePrograma = $reserva->programa
+-        && $reserva->programa->servicios
+-        && $reserva->programa->servicios->contains(function ($s) {
+-            $nombre = mb_strtolower(trim($s->nombre_servicio));
+-            return in_array($nombre, ['masaje', 'masajes']);
+-        });
++        $incluyeMasajePrograma = $reserva->personasConMasaje() > 0;
+ 
+         // Regla: nunca ambos a la vez
+         $modoMasaje = null; // 'extra' | 'programa' | null
+@@ -486,7 +476,7 @@ class VisitaController extends Controller
+             $cantidadSlotsMasaje = (int) ceil(((int) $reserva->cantidad_personas) / 2);
+         }
+ 
+-        $serviciosDisponibles = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosDisponibles = $reserva->serviciosNombres();
+ 
+         // Obtenemos la fecha seleccionada del formulario
+         $fechaSeleccionada = $reserva->fecha_visita;
+@@ -668,7 +658,7 @@ class VisitaController extends Controller
+         // $programa         = $reserva->programa;
+         // $almuerzosExtra   = session()->get('almuerzosExtra');
+         // $masajesExtra     = session()->get('masajesExtra');
+-        // $almuerzoIncluido = $programa->servicios->pluck('nombre_servicio')->toArray();
++        // $almuerzoIncluido = $reserva->serviciosNombres();
+ 
+         // try {
+ 
+@@ -1019,7 +1009,7 @@ class VisitaController extends Controller
+         session()->get('almuerzosExtra') ? $almuerzosExtra             = session()->get('almuerzosExtra') : $almuerzosExtra             = null;
+         session()->get('cantidadMasajesExtra') ? $cantidadMasajesExtra = session()->get('cantidadMasajesExtra') : $cantidadMasajesExtra = null;
+ 
+-        $serviciosDisponibles = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosDisponibles = $reserva->serviciosNombres();
+         // Obtenemos la fecha seleccionada del formulario
+         $fechaSeleccionada = \Carbon\Carbon::createFromFormat('d-m-Y', $reserva->fecha_visita)->format('Y-m-d');
+ 
+@@ -1173,7 +1163,7 @@ class VisitaController extends Controller
+         $almuerzosExtra = session()->get('almuerzosExtra');
+         $masajesExtra   = session()->get('masajesExtra');
+ 
+-        $almuerzoIncluido = $programa->servicios->pluck('nombre_servicio')->toArray();
++        $almuerzoIncluido = $reserva->serviciosNombres();
+ 
+         try {
+             DB::transaction(function () use ($request, &$reserva, &$visita, &$cliente, $almuerzoIncluido, $almuerzosExtra, $personas, &$menusActuales, &$visitasActuales, &$masajesActuales, $masajesExtra) {
+@@ -1456,12 +1446,7 @@ class VisitaController extends Controller
+         $cantidadMasajesExtra = (int) ($reserva->cantidad_masajes_extra ?? 0);
+ 
+         // Incluye masaje en el programa (acepta "Masaje" o "Masajes")
+-        $incluyeMasajePrograma = $reserva->programa
+-        && $reserva->programa->servicios
+-        && $reserva->programa->servicios->contains(function ($s) {
+-            $nombre = mb_strtolower(trim($s->nombre_servicio));
+-            return in_array($nombre, ['masaje', 'masajes']);
+-        });
++        $incluyeMasajePrograma = $reserva->personasConMasaje() > 0;
+ 
+                             // Regla: nunca ambos a la vez
+         $modoMasaje = null; // 'extra' | 'programa' | null
+@@ -1483,7 +1468,7 @@ class VisitaController extends Controller
+             $cantidadSlotsMasaje = (int) ceil(((int) $reserva->cantidad_personas) / 2);
+         }
+ 
+-        $serviciosDisponibles = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosDisponibles = $reserva->serviciosNombres();
+ 
+         // Obtenemos la fecha seleccionada del formulario
+         // $fechaSeleccionada   = \Carbon\Carbon::createFromFormat('d-m-Y', $reserva->fecha_visita)->format('Y-m-d');
+@@ -1689,7 +1674,7 @@ class VisitaController extends Controller
+         $cliente        = $reserva->cliente;
+         $visitaMail     = null;
+ 
+-        $serviciosPrograma = $programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosPrograma = $reserva->serviciosNombres();
+ 
+         $almuerzosExtra = false;
+         $ventaId        = optional($reserva->venta)->id;
+@@ -1809,7 +1794,7 @@ class VisitaController extends Controller
+ 
+     public function menu(Reserva $reserva, Visita $visita)
+     {
+-        $servicios = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $servicios = $reserva->serviciosNombres();
+         $menus     = $reserva->menus;
+ 
+         $almuerzosExtra = null;
+@@ -2175,9 +2160,9 @@ class VisitaController extends Controller
+         $almuerzosExtra = (bool) session()->get('almuerzosExtra');
+         $masajesExtra   = (bool) session()->get('masajesExtra');
+ 
+-        $serviciosPrograma     = $programa->servicios->pluck('nombre_servicio')->toArray();
++        $serviciosPrograma     = $reserva->serviciosNombres();
+         $incluyeAlmuerzo       = in_array('Almuerzo', $serviciosPrograma) || $almuerzosExtra;
+-        $incluyeMasajePrograma = $programa->servicios->contains('nombre_servicio', 'Masaje');
++        $incluyeMasajePrograma = $reserva->personasConMasaje() > 0;
+         $incluyeMasaje         = $incluyeMasajePrograma || $masajesExtra;
+ 
+         try {
+@@ -2341,6 +2326,10 @@ class VisitaController extends Controller
+ 
+     private function reservaIncluyeMasaje(Reserva $reserva): bool
+     {
++        if ($reserva->personasConMasaje() > 0) {
++            return true;
++        }
++
+         if (! $reserva->relationLoaded('programa')) {
+             $reserva->load('programa.servicios');
+         }
+@@ -2933,7 +2922,7 @@ class VisitaController extends Controller
+ 
+     private function crearDesayunoOnceSiCorresponde($request, Reserva $reserva): void
+     {
+-        $servicios    = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $servicios    = $reserva->serviciosNombres();
+         $incluyeAmbos = in_array('Desayuno y Once', $servicios);
+         $incluyeUno   = in_array('Desayuno u Once', $servicios);
+ 
+@@ -2961,7 +2950,7 @@ class VisitaController extends Controller
+ 
+     private function actualizarDesayunoOnceDesdePayload($request, Reserva $reserva): void
+     {
+-        $servicios    = $reserva->programa->servicios->pluck('nombre_servicio')->toArray();
++        $servicios    = $reserva->serviciosNombres();
+         $incluyeAmbos = in_array('Desayuno y Once', $servicios);
+         $incluyeUno   = in_array('Desayuno u Once', $servicios);
+ 
+diff --git a/app/Reserva.php b/app/Reserva.php
+index 3e5a2b2..746a458 100644
+--- a/app/Reserva.php
++++ b/app/Reserva.php
+@@ -86,6 +86,84 @@ class Reserva extends Model
+     {
+         return $this->hasOne(EstadoRecepcion::class, 'reserva_id');
+     }
++
++    // ===== Varios programas en una reserva (15/10/2026) =====
++
++    public function programasReserva()
++    {
++        return $this->hasMany(ReservaPrograma::class, 'id_reserva')->orderByDesc('principal')->orderBy('id');
++    }
++
++    /**
++     * Programas de la reserva como lista [programa, personas, valor_unitario, principal].
++     * Sin filas en reserva_programas: un solo programa con todas las personas.
++     */
++    public function detalleProgramas()
++    {
++        static $hayTabla = null;
++        if ($hayTabla === null) {
++            $hayTabla = \Illuminate\Support\Facades\Schema::hasTable('reserva_programas');
++        }
++        if (! $hayTabla) {
++            $filas = collect();
++        } elseif ($this->relationLoaded('programasReserva')) {
++            $filas = $this->programasReserva;
++        } else {
++            $filas = $this->programasReserva()->with('programa.servicios')->get();
++            $this->setRelation('programasReserva', $filas);
++        }
++        if ($filas->isEmpty()) {
++            return collect([(object) [
++                'programa'       => $this->programa,
++                'id_programa'    => $this->id_programa,
++                'personas'       => (int) $this->cantidad_personas,
++                'valor_unitario' => null,
++                'principal'      => true,
++            ]]);
++        }
++        return $filas->map(function ($f) {
++            return (object) [
++                'programa'       => $f->programa,
++                'id_programa'    => $f->id_programa,
++                'personas'       => (int) $f->cantidad_personas,
++                'valor_unitario' => $f->valor_unitario,
++                'principal'      => (bool) $f->principal,
++            ];
++        });
++    }
++
++    public function getTieneVariosProgramasAttribute(): bool
++    {
++        return $this->detalleProgramas()->count() > 1;
++    }
++
++    /** "Wellness Day" o "2 Wellness Day + 1 Full Day". */
++    public function getProgramasTextoAttribute(): string
++    {
++        $d = $this->detalleProgramas();
++        if ($d->count() <= 1) {
++            return (string) optional($this->programa)->nombre_programa;
++        }
++        return $d->map(function ($p) {
++            return $p->personas . ' ' . optional($p->programa)->nombre_programa;
++        })->implode(' + ');
++    }
++
++    /** Personas de los programas que incluyen masaje. */
++    public function personasConMasaje(): int
++    {
++        return (int) $this->detalleProgramas()->sum(function ($p) {
++            return ($p->programa && $p->programa->incluye_masajes) ? $p->personas : 0;
++        });
++    }
++
++    /** Nombres de servicios de todos los programas de la reserva (sin repetir). */
++    public function serviciosNombres(): array
++    {
++        return $this->detalleProgramas()->flatMap(function ($p) {
++            return $p->programa ? $p->programa->servicios->pluck('nombre_servicio')->all() : [];
++        })->unique()->values()->all();
++    }
+     //ALMACENAMIENTO
+ 
+     public function store($request)
+diff --git a/app/ReservaPrograma.php b/app/ReservaPrograma.php
+new file mode 100644
+index 0000000..b721daa
+--- /dev/null
++++ b/app/ReservaPrograma.php
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App;
++
++use Illuminate\Database\Eloquent\Model;
++
++/**
++ * Detalle de programas de una reserva (15/10/2026): una reserva puede llevar varios
++ * programas, p. ej. 2 Wellness Day + 1 Full Day. reservas.id_programa sigue siendo el
++ * programa principal y reservas.cantidad_personas el total de personas.
++ * Las reservas antiguas (o del bot / WooCommerce) no tienen filas aqui: se leen como
++ * un solo programa.
++ */
++class ReservaPrograma extends Model
++{
++    protected $table = 'reserva_programas';
++
++    protected $fillable = ['id_reserva', 'id_programa', 'cantidad_personas', 'valor_unitario', 'principal'];
++
++    protected $casts = ['principal' => 'boolean'];
++
++    public function reserva()
++    {
++        return $this->belongsTo(Reserva::class, 'id_reserva');
++    }
++
++    public function programa()
++    {
++        return $this->belongsTo(Programa::class, 'id_programa');
++    }
++}
+diff --git a/app/Services/ReservaProgramasService.php b/app/Services/ReservaProgramasService.php
+new file mode 100644
+index 0000000..d45e631
+--- /dev/null
++++ b/app/Services/ReservaProgramasService.php
+@@ -0,0 +1,184 @@
++<?php
++
++namespace App\Services;
++
++use App\Masaje;
++use App\Menu;
++use App\Programa;
++use App\Reserva;
++use App\ReservaPrograma;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Schema;
++
++/**
++ * Reservas con mas de un programa y ajuste de menus/masajes a la cantidad de personas.
++ * 15/10/2026.
++ */
++class ReservaProgramasService
++{
++    /** Programas adicionales del formulario: [[id_programa, personas], ...] validos. */
++    public static function extrasDesdeRequest(Request $request): array
++    {
++        $out = [];
++        foreach ((array) $request->input('programas_extra', []) as $fila) {
++            if (! is_array($fila)) {
++                continue;
++            }
++            $id = (int) ($fila['id_programa'] ?? 0);
++            $personas = (int) preg_replace('/\D/', '', (string) ($fila['personas'] ?? ''));
++            if ($id > 0 && $personas > 0 && Programa::whereKey($id)->exists()) {
++                $out[] = ['id_programa' => $id, 'personas' => $personas];
++            }
++        }
++        return $out;
++    }
++
++    /** Programas adicionales guardados (sin el principal), para comparar con el formulario. */
++    public static function extrasGuardados(Reserva $reserva): array
++    {
++        if (! Schema::hasTable('reserva_programas')) {
++            return [];
++        }
++        return ReservaPrograma::where('id_reserva', $reserva->id)->where('principal', false)->orderBy('id')->get()
++            ->map(function ($f) {
++                return ['id_programa' => (int) $f->id_programa, 'personas' => (int) $f->cantidad_personas];
++            })->values()->all();
++    }
++
++    /**
++     * Guarda los programas de la reserva y deja reservas.cantidad_personas = total y
++     * cantidad_masajes = personas de programas con masaje. Devuelve el monto de programas
++     * (suma de valor por persona x personas).
++     * $valorPrincipal: precio por persona del programa principal (si se quiere respetar el original).
++     */
++    public static function guardar(Reserva $reserva, int $idPrincipal, int $personasPrincipal, array $extras, ?float $valorPrincipal = null): int
++    {
++        $previos = ReservaPrograma::where('id_reserva', $reserva->id)->get()->keyBy('id_programa');
++
++        // Agrupar por programa (si repiten el principal en adicionales, se suma)
++        $filas = [$idPrincipal => ['personas' => $personasPrincipal, 'principal' => true]];
++        foreach ($extras as $e) {
++            if (isset($filas[$e['id_programa']])) {
++                $filas[$e['id_programa']]['personas'] += $e['personas'];
++            } else {
++                $filas[$e['id_programa']] = ['personas' => $e['personas'], 'principal' => false];
++            }
++        }
++
++        $programas = Programa::with('servicios')->whereIn('id', array_keys($filas))->get()->keyBy('id');
++        $monto = 0;
++        $total = 0;
++        $conMasaje = 0;
++        $guardar = [];
++        foreach ($filas as $id => $f) {
++            $prog = $programas[$id] ?? null;
++            if ($f['principal'] && $valorPrincipal) {
++                $valor = $valorPrincipal;
++            } elseif (isset($previos[$id]) && $previos[$id]->valor_unitario !== null) {
++                $valor = (float) $previos[$id]->valor_unitario;
++            } else {
++                $valor = (float) optional($prog)->valor_programa;
++            }
++            $monto += (int) round($valor * $f['personas']);
++            $total += $f['personas'];
++            if ($prog && $prog->incluye_masajes) {
++                $conMasaje += $f['personas'];
++            }
++            $guardar[] = [
++                'id_reserva'        => $reserva->id,
++                'id_programa'       => $id,
++                'cantidad_personas' => $f['personas'],
++                'valor_unitario'    => (int) round($valor),
++                'principal'         => $f['principal'],
++            ];
++        }
++
++        ReservaPrograma::where('id_reserva', $reserva->id)->delete();
++        if (count($guardar) > 1) {
++            foreach ($guardar as $g) {
++                ReservaPrograma::create($g);
++            }
++        }
++
++        $reserva->forceFill([
++            'id_programa'       => $idPrincipal,
++            'cantidad_personas' => $total,
++            'cantidad_masajes'  => $conMasaje > 0 ? $conMasaje : null,
++        ])->save();
++
++        return $monto;
++    }
++
++    /**
++     * Deja menus y masajes de la reserva acordes a la cantidad de personas actual
++     * (por ejemplo, si pasa de 16 a 12 personas). Solo toca lo que ya fue creado:
++     * si la reserva aun no tiene menus/masajes, los crea el registro de la visita.
++     */
++    public static function ajustarMenusYMasajes(Reserva $reserva): array
++    {
++        $reserva->refresh();
++        $personas = max(0, (int) $reserva->cantidad_personas);
++        $res = ['menus' => null, 'masajes' => null];
++
++        // ---- Menus: uno por persona ----
++        $menus = Menu::where('id_reserva', $reserva->id)->orderBy('id')->get();
++        if ($menus->count() > 0 && $menus->count() !== $personas) {
++            if ($menus->count() < $personas) {
++                for ($i = $menus->count(); $i < $personas; $i++) {
++                    Menu::create([
++                        'id_reserva'                 => $reserva->id,
++                        'id_producto_entrada'        => null,
++                        'id_producto_fondo'          => null,
++                        'id_producto_acompanamiento' => null,
++                        'alergias'                   => null,
++                        'observacion'                => null,
++                    ]);
++                }
++            } else {
++                $sobran = $menus->count() - $personas;
++                // Primero los que no tienen nada elegido, desde el ultimo
++                $vacios = $menus->filter(function ($m) {
++                    return ! $m->id_producto_entrada && ! $m->id_producto_fondo && ! $m->id_producto_acompanamiento
++                        && ! $m->alergias && ! $m->observacion;
++                })->reverse();
++                $borrar = $vacios->take($sobran)->pluck('id')->all();
++                if (count($borrar) < $sobran) {
++                    $resto = $menus->reverse()->whereNotIn('id', $borrar)->take($sobran - count($borrar))->pluck('id')->all();
++                    $borrar = array_merge($borrar, $resto);
++                }
++                Menu::whereIn('id', $borrar)->delete();
++            }
++            $res['menus'] = $personas;
++        }
++
++        // ---- Masajes incluidos en el programa: uno por persona con masaje ----
++        $conMasaje = $reserva->personasConMasaje();
++        $masajes = Masaje::where('id_reserva', $reserva->id)->orderBy('persona')->get();
++        if ($conMasaje > 0 && $masajes->count() > 0) {
++            $existentes = $masajes->keyBy(function ($m) {
++                return (int) $m->persona;
++            });
++            for ($p = 1; $p <= $conMasaje; $p++) {
++                if (! isset($existentes[$p])) {
++                    Masaje::create([
++                        'horario_masaje'  => null,
++                        'tipo_masaje'     => 'Relajación',
++                        'id_lugar_masaje' => 1,
++                        'persona'         => $p,
++                        'tiempo_extra'    => 0,
++                        'id_reserva'      => $reserva->id,
++                        'user_id'         => null,
++                    ]);
++                }
++            }
++            Masaje::where('id_reserva', $reserva->id)->where('persona', '>', $conMasaje)->delete();
++            $res['masajes'] = $conMasaje;
++        } elseif ($conMasaje === 0 && $masajes->count() > $personas && $personas > 0) {
++            // Solo masajes extra: no puede haber mas masajes que personas
++            Masaje::where('id_reserva', $reserva->id)->where('persona', '>', $personas)->delete();
++            $res['masajes'] = $personas;
++        }
++
++        return $res;
++    }
++}
+diff --git a/database/migrations/2026_10_15_000001_create_reserva_programas_table.php b/database/migrations/2026_10_15_000001_create_reserva_programas_table.php
+new file mode 100644
+index 0000000..81f81d0
+--- /dev/null
++++ b/database/migrations/2026_10_15_000001_create_reserva_programas_table.php
+@@ -0,0 +1,34 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++/** Varios programas en una misma reserva (15/10/2026). */
++class CreateReservaProgramasTable extends Migration
++{
++    public function up()
++    {
++        if (Schema::hasTable('reserva_programas')) {
++            return;
++        }
++        Schema::create('reserva_programas', function (Blueprint $table) {
++            $table->increments('id');
++            $table->unsignedInteger('id_reserva');
++            $table->unsignedInteger('id_programa');
++            $table->unsignedSmallInteger('cantidad_personas');
++            $table->unsignedInteger('valor_unitario')->nullable();
++            $table->boolean('principal')->default(false);
++            $table->timestamps();
++
++            $table->index('id_reserva');
++            $table->foreign('id_reserva')->references('id')->on('reservas')->onUpdate('cascade')->onDelete('cascade');
++            $table->foreign('id_programa')->references('id')->on('programas')->onUpdate('cascade');
++        });
++    }
++
++    public function down()
++    {
++        Schema::dropIfExists('reserva_programas');
++    }
++}
+diff --git a/resources/views/emails/reserva.blade.php b/resources/views/emails/reserva.blade.php
+index 6d82235..a7c6db7 100644
+--- a/resources/views/emails/reserva.blade.php
++++ b/resources/views/emails/reserva.blade.php
+@@ -70,7 +70,7 @@
+                                 color: #f9f9f9;
+                             ">
+             <strong>Programa:</strong>
+-            {{ $programa->nombre_programa}}
++            {{ isset($reserva) ? $reserva->programas_texto : $programa->nombre_programa }}
+         </p>
+ 
+ 
+diff --git a/resources/views/themes/backoffice/pages/admin/finanzas/detalle-dia.blade.php b/resources/views/themes/backoffice/pages/admin/finanzas/detalle-dia.blade.php
+index 74b556b..4b77b8c 100644
+--- a/resources/views/themes/backoffice/pages/admin/finanzas/detalle-dia.blade.php
++++ b/resources/views/themes/backoffice/pages/admin/finanzas/detalle-dia.blade.php
+@@ -77,7 +77,7 @@
+                                             @if($isGiftCard)
+                                                 <span class="blue-text">GiftCard</span>
+                                             @else
+-                                                {{ $venta->reserva->programa->nombre_programa }}
++                                                {{ $venta->reserva->programas_texto }}
+                                             @endif
+                                         </td>
+ 
+diff --git a/resources/views/themes/backoffice/pages/reserva/create.blade.php b/resources/views/themes/backoffice/pages/reserva/create.blade.php
+index 977de7f..0584071 100644
+--- a/resources/views/themes/backoffice/pages/reserva/create.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/create.blade.php
+@@ -91,6 +91,8 @@
+ 
+ 
+               </div>
++              @include('themes.backoffice.pages.reserva.includes.programas_extra')
++
+ 
+ 
+               <div class="row">
+@@ -313,7 +315,7 @@
+ 
+   function calcularValorTotal(){
+ 
+-    var total = (valorPrograma * cantidadPersonas)-abono;
++    var total = (valorPrograma * cantidadPersonas) + (window.montoProgramasExtra ? window.montoProgramasExtra() : 0) - abono;
+     $('#abono_programa').val(formatCLP(abono));
+     $('#total_pagar').val(formatCLP(total));
+   }
+diff --git a/resources/views/themes/backoffice/pages/reserva/edit.blade.php b/resources/views/themes/backoffice/pages/reserva/edit.blade.php
+index 5ac77b3..b50bb93 100644
+--- a/resources/views/themes/backoffice/pages/reserva/edit.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/edit.blade.php
+@@ -70,7 +70,7 @@
+ 
+                   <input id="cantidad_personas" type="number"
+                     class="form-control @error('cantidad_personas') is-invalid @enderror" name="cantidad_personas"
+-                    value="{{$reserva->cantidad_personas ?? old('cantidad_personas', '')}}" required>
++                    value="{{ $personasPrincipal ?? $reserva->cantidad_personas ?? old('cantidad_personas', '') }}" required>
+                   @error('cantidad_personas')
+                   <span class="invalid-feedback" role="alert">
+                     <strong style="color:red">{{ $message }}</strong>
+@@ -84,6 +84,8 @@
+ 
+ 
+               </div>
++              @include('themes.backoffice.pages.reserva.includes.programas_extra', ['programasExtra' => $programasExtra ?? collect()])
++
+ 
+ 
+               @php
+@@ -302,7 +304,7 @@ $('#abono_programa').on('change', function(){
+ 
+ function calcularValorTotal(){
+ 
+-  var total = Math.round(valorPrograma * cantidadPersonas) - abono - abonosExtra;
++  var total = Math.round(valorPrograma * cantidadPersonas) + (window.montoProgramasExtra ? window.montoProgramasExtra() : 0) - abono - abonosExtra;
+   $('#total_pagar').val(total);
+ }
+ 
+diff --git a/resources/views/themes/backoffice/pages/reserva/includes/programas_extra.blade.php b/resources/views/themes/backoffice/pages/reserva/includes/programas_extra.blade.php
+new file mode 100644
+index 0000000..4cf8d4d
+--- /dev/null
++++ b/resources/views/themes/backoffice/pages/reserva/includes/programas_extra.blade.php
+@@ -0,0 +1,113 @@
++{{-- Programas adicionales en la misma reserva (15/10/2026). Ej.: 2 Wellness Day + 1 Full Day. --}}
++@php
++  $programasExtra = $programasExtra ?? collect();
++  $listaProgramas = $programas->sortBy('nombre_programa');
++@endphp
++<div class="row" id="programas-extra-box" style="margin-bottom:0">
++  <div class="col s12">
++    <p style="margin:0 0 6px 0">
++      <strong>¿Otro programa en la misma reserva?</strong>
++      <span class="grey-text">(ej.: 2 personas en Wellness Day y 1 en Full Day)</span>
++    </p>
++    <div id="programas-extra-filas">
++      @foreach ($programasExtra as $i => $px)
++        <div class="row programa-extra-fila" style="margin-bottom:4px">
++          <div class="col s7 m6">
++            <select class="browser-default programa-extra-select" name="programas_extra[{{ $i }}][id_programa]">
++              <option value="">-- Programa --</option>
++              @foreach ($listaProgramas as $pr)
++                <option value="{{ $pr->id }}" data-valor="{{ ((int) $pr->id === (int) $px->id_programa && $px->valor_unitario) ? $px->valor_unitario : $pr->valor_programa }}"
++                  @if ((int) $pr->id === (int) $px->id_programa) selected @endif>{{ $pr->nombre_programa }}</option>
++              @endforeach
++            </select>
++          </div>
++          <div class="col s3 m3">
++            <input type="number" min="1" class="programa-extra-personas" name="programas_extra[{{ $i }}][personas]" value="{{ $px->personas }}" placeholder="Personas">
++          </div>
++          <div class="col s2 m3">
++            <a href="#!" class="btn-flat red-text programa-extra-quitar" title="Quitar"><i class="material-icons">close</i></a>
++          </div>
++        </div>
++      @endforeach
++    </div>
++    <a href="#!" class="btn-small waves-effect" id="programa-extra-agregar"><i class="material-icons left">add</i>Agregar programa</a>
++    <span id="programas-total-personas" class="grey-text" style="margin-left:12px"></span>
++  </div>
++</div>
++<template id="programa-extra-plantilla">
++  <div class="row programa-extra-fila" style="margin-bottom:4px">
++    <div class="col s7 m6">
++      <select class="browser-default programa-extra-select" name="programas_extra[__i__][id_programa]">
++        <option value="">-- Programa --</option>
++        @foreach ($listaProgramas as $pr)
++          <option value="{{ $pr->id }}" data-valor="{{ $pr->valor_programa }}">{{ $pr->nombre_programa }}</option>
++        @endforeach
++      </select>
++    </div>
++    <div class="col s3 m3">
++      <input type="number" min="1" class="programa-extra-personas" name="programas_extra[__i__][personas]" placeholder="Personas">
++    </div>
++    <div class="col s2 m3">
++      <a href="#!" class="btn-flat red-text programa-extra-quitar" title="Quitar"><i class="material-icons">close</i></a>
++    </div>
++  </div>
++</template>
++<script>
++  (function () {
++    var cont = document.getElementById('programas-extra-filas');
++    var plantilla = document.getElementById('programa-extra-plantilla');
++    var indice = cont.querySelectorAll('.programa-extra-fila').length + 100;
++
++    // Monto de los programas adicionales (valor por persona x personas)
++    window.montoProgramasExtra = function () {
++      var total = 0;
++      cont.querySelectorAll('.programa-extra-fila').forEach(function (f) {
++        var sel = f.querySelector('select');
++        var opt = sel.options[sel.selectedIndex];
++        var valor = opt ? parseInt(opt.getAttribute('data-valor') || '0', 10) : 0;
++        var personas = parseInt(f.querySelector('.programa-extra-personas').value || '0', 10);
++        if (sel.value && personas > 0) total += Math.round(valor * personas);
++      });
++      return total;
++    };
++    window.personasProgramasExtra = function () {
++      var n = 0;
++      cont.querySelectorAll('.programa-extra-fila').forEach(function (f) {
++        var p = parseInt(f.querySelector('.programa-extra-personas').value || '0', 10);
++        if (f.querySelector('select').value && p > 0) n += p;
++      });
++      return n;
++    };
++
++    function refrescar(e) {
++      var principal = parseInt((document.getElementById('cantidad_personas') || {}).value || '0', 10) || 0;
++      var extra = window.personasProgramasExtra();
++      var etiqueta = document.getElementById('programas-total-personas');
++      etiqueta.textContent = extra > 0 ? ('Total de la reserva: ' + (principal + extra) + ' personas') : '';
++      var lbl = document.querySelector('label[for="cantidad_personas"]');
++      if (lbl) lbl.textContent = extra > 0 ? 'Personas en este programa' : 'Cantidad Personas';
++      if (e !== 'inicio' && typeof calcularValorTotal === 'function') calcularValorTotal();
++    }
++
++    document.getElementById('programa-extra-agregar').addEventListener('click', function (e) {
++      e.preventDefault();
++      var html = plantilla.innerHTML.replace(/__i__/g, String(indice++));
++      var tmp = document.createElement('div');
++      tmp.innerHTML = html.trim();
++      cont.appendChild(tmp.firstChild);
++      refrescar();
++    });
++    cont.addEventListener('click', function (e) {
++      var b = e.target.closest('.programa-extra-quitar');
++      if (!b) return;
++      e.preventDefault();
++      b.closest('.programa-extra-fila').remove();
++      refrescar();
++    });
++    cont.addEventListener('change', refrescar);
++    cont.addEventListener('input', refrescar);
++    var cp = document.getElementById('cantidad_personas');
++    if (cp) { cp.addEventListener('change', refrescar); cp.addEventListener('input', refrescar); }
++    document.addEventListener('DOMContentLoaded', function () { refrescar('inicio'); });
++  })();
++</script>
+diff --git a/resources/views/themes/backoffice/pages/reserva/index_all.blade.php b/resources/views/themes/backoffice/pages/reserva/index_all.blade.php
+index 10e5263..c9670e3 100644
+--- a/resources/views/themes/backoffice/pages/reserva/index_all.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/index_all.blade.php
+@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
+             @if ($visita->horario_sauna && !in_array($visita->horario_sauna, $saunaHorarios))
+             var horaSauna = convertirHora('{{ $visita->horario_sauna }}');
+             eventos.push({
+-                title: '{{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{$reserva->programa->nombre_programa}}',
++                title: '{{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{ $reserva->programas_texto }}',
+                 start: formatoFecha + ' {{ $visita->horario_sauna }}',
+                 end: formatoFecha + ' {{ $visita->hora_fin_sauna }}',
+                 url: '{{ route('backoffice.reserva.show', $reserva->id) }}',
+@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function() {
+             // var horaTinaja = convertirHora('{{ $visita->horario_tinaja }}');
+ 
+             // eventos.push({
+-            //     title: 'Tinaja - {{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{$reserva->programa->nombre_programa}}',
++            //     title: 'Tinaja - {{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{ $reserva->programas_texto }}',
+             //     start: formatoFecha + ' ' + horaTinaja,
+             //     end: formatoFecha + ' {{ $visita->hora_fin_tinaja }}',
+             //     url: '{{ route('backoffice.reserva.show', $reserva->id) }}',
+@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function() {
+             // var horaMasaje = convertirHora('{{ $visita->horario_masaje }}');
+ 
+             // eventos.push({
+-            //     title: 'Masaje - {{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{$reserva->programa->nombre_programa}}',
++            //     title: 'Masaje - {{ addslashes($reserva->cliente->nombre_cliente) }} - {{ $reserva->cantidad_personas }} personas - {{ $reserva->programas_texto }}',
+             //     start: formatoFecha + ' ' + horaMasaje,
+             //     end: formatoFecha + ' {{ $visita->hora_fin_masaje_extra }}',
+             //     url: '{{ route('backoffice.reserva.show', $reserva->id) }}',
+diff --git a/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php b/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
+index 628f4f1..37f7aa8 100644
+--- a/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/index_registro.blade.php
+@@ -359,7 +359,7 @@
+                                         </td>
+                                         <td>
+ 
+-                                            {{$reserva->programa->nombre_programa}}
++                                            {{$reserva->programas_texto}}
+ 
+                                         </td>
+                                         <td>
+diff --git a/resources/views/themes/backoffice/pages/reserva/screens/mobile.blade.php b/resources/views/themes/backoffice/pages/reserva/screens/mobile.blade.php
+index bd31bb6..a27fe4d 100644
+--- a/resources/views/themes/backoffice/pages/reserva/screens/mobile.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/screens/mobile.blade.php
+@@ -131,7 +131,7 @@
+                                         {{ isset($ubicacion[$horario ?? 0]) ? $ubicacion[$horario ?? 0] : 'No Disponible' }}
+                                     </td>
+                                     <td>
+-                                        {{ (isset($ubicacion)) ? $reserva->programa->nombre_programa : 'No Registra' }}
++                                        {{ (isset($ubicacion)) ? $reserva->programas_texto : 'No Registra' }}
+                                     </td>
+                                     <td>
+                                         <i class='material-icons right {{ $color }}-text'>fiber_manual_record</i>
+@@ -227,7 +227,7 @@
+                                         <strong>Nombre: </strong><strong style="color:#FF4081;">
+                                             {{ $reserva->cliente->nombre_cliente }}
+                                         </strong>
+-                                        <p><strong>Programa: </strong>{{ $reserva->programa->nombre_programa }}</p>
++                                        <p><strong>Programa: </strong>{{ $reserva->programas_texto }}</p>
+                                         <p><strong>Asistentes: </strong>{{ $reserva->cantidad_personas }} personas</p>
+ 
+                                         @if (is_null($reserva->observacion))
+diff --git a/resources/views/themes/backoffice/pages/reserva/screens/principal.blade.php b/resources/views/themes/backoffice/pages/reserva/screens/principal.blade.php
+index 3b63fdc..527757f 100644
+--- a/resources/views/themes/backoffice/pages/reserva/screens/principal.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/screens/principal.blade.php
+@@ -46,7 +46,7 @@
+                                         <a href="{{ route('backoffice.reserva.show', $reserva) }}">
+                                             <strong>{{ addslashes($reserva->cliente->nombre_cliente) }} -</strong>
+                                             {{$visita->ubicacion->nombre ?? 'No registra'}} -
+-                                            {{ $reserva->programa->nombre_programa }} -
++                                            {{ $reserva->programas_texto }} -
+                                             {{ $reserva->cantidad_personas }} personas -
+                                             @if (is_null($reserva->observacion))
+                                             Sin Observaciones
+@@ -93,7 +93,7 @@
+                                         'fin'         => $v->hora_fin_sauna,
+                                         'cliente'     => $r->cliente->nombre_cliente,
+                                         'ubicacion'   => optional($v->ubicacion)->nombre ?? 'No registra',
+-                                        'programa'    => $r->programa->nombre_programa,
++                                        'programa'    => $r->programas_texto,
+                                         'personas'    => $r->cantidad_personas,
+                                         'observacion' => $r->observacion,
+                                         'trago'       => $v->trago_cortesia,
+@@ -191,7 +191,7 @@
+                                         <a href="{{ route('backoffice.reserva.show', $reserva) }}">
+                                             <strong>{{ addslashes($reserva->cliente->nombre_cliente) }} -</strong>
+                                             {{$visita->ubicacion->nombre ?? 'No registra'}} -
+-                                            {{ $reserva->programa->nombre_programa }} -
++                                            {{ $reserva->programas_texto }} -
+                                             {{ $reserva->cantidad_personas }} personas -
+                                             @if (is_null($reserva->observacion))
+                                             Sin Observaciones
+@@ -238,7 +238,7 @@
+                                         'fin'         => $v->hora_fin_tinaja,
+                                         'cliente'     => $r->cliente->nombre_cliente,
+                                         'ubicacion'   => optional($v->ubicacion)->nombre ?? 'No registra',
+-                                        'programa'    => $r->programa->nombre_programa,
++                                        'programa'    => $r->programas_texto,
+                                         'personas'    => $r->cantidad_personas,
+                                         'observacion' => $r->observacion,
+                                         'trago'       => $v->trago_cortesia,
+@@ -336,7 +336,7 @@
+                                     'lugar'       => null,
+                                     'tipo'        => null,
+                                     'ubicacion'   => optional(optional($ultimaVisita)->ubicacion)->nombre ?? 'No registra',
+-                                    'programa'    => $r->programa->nombre_programa,
++                                    'programa'    => $r->programas_texto,
+                                     'personas'    => [],
+                                     'observacion' => $r->observacion,
+                                     'trago'       => optional($ultimaVisita)->trago_cortesia,
+@@ -369,7 +369,7 @@
+                                         'lugar'       => optional($m->lugarMasaje)->nombre ?? 'No Registra lugar',
+                                         'tipo'        => $m->tipo_masaje ?? 'No Registra tipo masaje',
+                                         'ubicacion'   => optional(optional($ultimaVisita)->ubicacion)->nombre ?? 'No registra',
+-                                        'programa'    => $r->programa->nombre_programa,
++                                        'programa'    => $r->programas_texto,
+                                         'personas'    => [],
+                                         'observacion' => $r->observacion,
+                                         'trago'       => optional($ultimaVisita)->trago_cortesia,
+diff --git a/resources/views/themes/backoffice/pages/reserva/show.blade.php b/resources/views/themes/backoffice/pages/reserva/show.blade.php
+index 820bdcb..fd2ca58 100644
+--- a/resources/views/themes/backoffice/pages/reserva/show.blade.php
++++ b/resources/views/themes/backoffice/pages/reserva/show.blade.php
+@@ -224,7 +224,7 @@
+               <ul id="projects-collection" class="collection z-depth-1">
+                 <li class="collection-item avatar">
+                   <i class="material-icons cyan circle">card_travel</i>
+-                  <h6 class="collection-header m-0">Programa {{$reserva->programa->nombre_programa}}</h6>
++                  <h6 class="collection-header m-0">Programa {{$reserva->programas_texto}}</h6>
+                   <p>Servicios incluidos</p>
+                 </li>
+                 @foreach ($reserva->programa->servicios as $servicio)
+-- 
+2.43.0
+
