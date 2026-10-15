@@ -3,7 +3,7 @@
 cd /var/www/html/botacurapp || exit 1
 rm -rf public/rev-a39a2c2b568b   # copia temporal de lectura
 U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/parches-finanzas
-curl -fsSL "$U/agenda_calendario.py?v=$(date +%s)" -o /tmp/agenda_calendario.py || exit 1
+curl -fsSL "https://raw.githubusercontent.com/swimmerw/botacurapp-1/f4758a5ab0c5917e79611d14fbb9087dc3b2b31e/agenda_calendario.py" -o /tmp/agenda_calendario.py || exit 1
 python3 /tmp/agenda_calendario.py || exit 1
 for f in app/Services/BotTarifasService.php app/Services/BotPromptService.php app/Http/Controllers/BotConfiguracionController.php; do
   if ! php -l $f >/dev/null; then
