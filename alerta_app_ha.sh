@@ -21,7 +21,7 @@ conditions: []
 actions:
   - action: rest_command.whatsapp_alerta
     data:
-      mensaje: "{{ ((trigger.json.mensaje if trigger.json is defined and trigger.json.mensaje is defined else 'Aviso de BotacurApp') | string)[:700] }}"
+      mensaje: "🤖 APP | {{ ((trigger.json.mensaje if trigger.json is defined and trigger.json.mensaje is defined else 'Aviso de BotacurApp') | string)[:700] }}"
 YML
 sudo docker exec homeassistant python3 -m homeassistant --script check_config -c /config > /tmp/check_ha.txt 2>&1 || true
 if grep -qiE "Failed config|Invalid config" /tmp/check_ha.txt; then
