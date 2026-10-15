@@ -1,0 +1,316 @@
+From 3ec7b384b9c9d98f90bc3c40de8a34f3986d0425 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 18:33:53 -0300
+Subject: [PATCH] Gift Cards: fecha de compra y vencimiento a 45 dias
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/GiftCard.php                              | 58 ++++++++++++++++++-
+ app/Http/Controllers/GiftCardController.php   | 11 ++--
+ ..._000002_add_fecha_compra_to_gift_cards.php | 29 ++++++++++
+ .../pages/giftcard/create.blade.php           | 46 +++------------
+ .../backoffice/pages/giftcard/edit.blade.php  | 12 +---
+ .../backoffice/pages/giftcard/index.blade.php |  6 +-
+ .../backoffice/pages/giftcard/show.blade.php  |  3 +-
+ 7 files changed, 111 insertions(+), 54 deletions(-)
+ create mode 100644 database/migrations/2026_10_15_000002_add_fecha_compra_to_gift_cards.php
+
+diff --git a/app/GiftCard.php b/app/GiftCard.php
+index 9e05340..907019f 100644
+--- a/app/GiftCard.php
++++ b/app/GiftCard.php
+@@ -17,6 +17,7 @@ class GiftCard extends Model
+         'id_programa', //Se asigna el programa solicitado en la GC
+         'id_venta', //Este campo se completara al registrar la reserva
+         'validez_hasta',
++        'fecha_compra', // 15/10/2026: vence 45 dias despues
+         'de',//✔️
+         'para',//✔️
+         'correo',//✔️
+@@ -44,7 +45,62 @@ class GiftCard extends Model
+         return $codigo;
+     }
+ 
++    /** Dias de vigencia desde la compra (15/10/2026). */
++    const DIAS_VIGENCIA = 45;
++
++    public static function venceDesde($fechaCompra): string
++    {
++        return Carbon::parse($fechaCompra)->addDays(self::DIAS_VIGENCIA)->toDateString();
++    }
++
++    /** Fecha de compra: la registrada o, si no hay, el dia en que se creo. */
++    public function getFechaCompraRealAttribute(): ?Carbon
++    {
++        if ($this->fecha_compra) {
++            return Carbon::parse($this->fecha_compra);
++        }
++        return $this->created_at ? Carbon::parse($this->created_at)->startOfDay() : null;
++    }
++
++    /** Vencimiento: validez_hasta o, si no hay, compra + 45 dias. */
++    public function getVenceAttribute(): ?Carbon
++    {
++        if ($this->validez_hasta) {
++            return Carbon::parse($this->validez_hasta);
++        }
++        return $this->fecha_compra_real ? $this->fecha_compra_real->copy()->addDays(self::DIAS_VIGENCIA) : null;
++    }
++
++    public function getCompradaAttribute(){
++        return $this->fecha_compra_real ? $this->fecha_compra_real->format('d-m-Y') : '';
++    }
++
+     public function getValidoAttribute(){
+-        return Carbon::parse($this->validez_hasta)->format('d-m-Y');
++        return $this->vence ? $this->vence->format('d-m-Y') : '';
++    }
++
++    /** Dias que quedan (negativo = vencida). */
++    public function getDiasRestantesAttribute(): ?int
++    {
++        return $this->vence ? (int) Carbon::today()->diffInDays($this->vence->copy()->startOfDay(), false) : null;
++    }
++
++    /** Texto y color para mostrar la vigencia. */
++    public function getVigenciaAttribute(): array
++    {
++        if ($this->usada) {
++            return ['texto' => 'Usada', 'color' => 'grey'];
++        }
++        $d = $this->dias_restantes;
++        if ($d === null) {
++            return ['texto' => 'Sin fecha', 'color' => 'grey'];
++        }
++        if ($d < 0) {
++            return ['texto' => 'Vencida hace ' . abs($d) . ' día' . (abs($d) === 1 ? '' : 's'), 'color' => 'red'];
++        }
++        if ($d === 0) {
++            return ['texto' => 'Vence hoy', 'color' => 'orange'];
++        }
++        return ['texto' => 'Quedan ' . $d . ' día' . ($d === 1 ? '' : 's'), 'color' => $d <= 7 ? 'orange' : 'green'];
+     }
+ }
+diff --git a/app/Http/Controllers/GiftCardController.php b/app/Http/Controllers/GiftCardController.php
+index 00cbb47..5f115f9 100644
+--- a/app/Http/Controllers/GiftCardController.php
++++ b/app/Http/Controllers/GiftCardController.php
+@@ -84,9 +84,10 @@ class GiftCardController extends Controller
+         $codigo = GiftCard::generarCodigoUnicoGiftCard();
+ 
+         $fechaUso     = $fechaManual ? $request->fecha_uso : null;
+-        $validezHasta = $fechaManual
+-            ? ($request->validez_hasta ?: $request->fecha_uso)
+-            : Carbon::now()->addDays(45)->toDateString();
++        // Vigencia: 45 dias desde la fecha de compra (15/10/2026)
++        $request->validate(['fecha_compra' => 'nullable|date']);
++        $fechaCompra  = $request->filled('fecha_compra') ? Carbon::parse($request->fecha_compra)->toDateString() : Carbon::today()->toDateString();
++        $validezHasta = GiftCard::venceDesde($fechaCompra);
+ 
+         $gc = GiftCard::create([
+             'codigo'            => $codigo,
+@@ -96,6 +97,7 @@ class GiftCardController extends Controller
+             'id_programa'       => $request->id_programa,
+             'id_venta'          => null,
+             'validez_hasta'     => $validezHasta,
++            'fecha_compra'      => $fechaCompra,
+             'de'                => $request->de,
+             'para'              => $request->para,
+             'correo'            => $request->correo,
+@@ -178,7 +180,8 @@ class GiftCardController extends Controller
+             'fecha_uso'         => $request->filled('fecha_uso') ? $request->fecha_uso : $gc->fecha_uso,
+             'id_programa'       => $request->id_programa,
+             'id_venta'          => $gc->id_venta,
+-            'validez_hasta'     => $request->filled('validez_hasta') ? $request->validez_hasta : $gc->validez_hasta,
++            'fecha_compra'      => $fechaCompraUpd = ($request->filled('fecha_compra') ? Carbon::parse($request->fecha_compra)->toDateString() : optional($gc->fecha_compra_real)->toDateString()),
++            'validez_hasta'     => $fechaCompraUpd ? GiftCard::venceDesde($fechaCompraUpd) : $gc->validez_hasta,
+             'de'                => $request->de,
+             'para'              => $request->para,
+             'correo'            => $request->correo,
+diff --git a/database/migrations/2026_10_15_000002_add_fecha_compra_to_gift_cards.php b/database/migrations/2026_10_15_000002_add_fecha_compra_to_gift_cards.php
+new file mode 100644
+index 0000000..5fce33f
+--- /dev/null
++++ b/database/migrations/2026_10_15_000002_add_fecha_compra_to_gift_cards.php
+@@ -0,0 +1,29 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
++
++/** Gift Cards: fecha de compra; vencen 45 dias despues (15/10/2026). */
++class AddFechaCompraToGiftCards extends Migration
++{
++    public function up()
++    {
++        if (! Schema::hasColumn('gift_cards', 'fecha_compra')) {
++            Schema::table('gift_cards', function (Blueprint $table) {
++                $table->date('fecha_compra')->nullable()->after('monto');
++            });
++        }
++        DB::statement('UPDATE gift_cards SET fecha_compra = DATE(created_at) WHERE fecha_compra IS NULL AND created_at IS NOT NULL');
++    }
++
++    public function down()
++    {
++        if (Schema::hasColumn('gift_cards', 'fecha_compra')) {
++            Schema::table('gift_cards', function (Blueprint $table) {
++                $table->dropColumn('fecha_compra');
++            });
++        }
++    }
++}
+diff --git a/resources/views/themes/backoffice/pages/giftcard/create.blade.php b/resources/views/themes/backoffice/pages/giftcard/create.blade.php
+index 43a4e06..1c6a963 100644
+--- a/resources/views/themes/backoffice/pages/giftcard/create.blade.php
++++ b/resources/views/themes/backoffice/pages/giftcard/create.blade.php
+@@ -121,6 +121,14 @@
+                                 </div>
+                             </div>
+ 
++                            <div class="row">
++                                <div class="input-field col s12 m6 l3">
++                                    <input id="fecha_compra" type="date" name="fecha_compra" value="{{ old('fecha_compra', now()->toDateString()) }}">
++                                    <label for="fecha_compra" class="active">Fecha de compra:</label>
++                                    <span class="helper-text">Vence 45 días después de la compra.</span>
++                                </div>
++                            </div>
++
+                             @if($fechaManual)
+                             <div class="row">
+                                 <div class="input-field col s12 m6 l3">
+@@ -132,16 +140,6 @@
+                                         </span>
+                                     @enderror
+                                 </div>
+-
+-                                <div class="input-field col s12 m6 l3">
+-                                    <input id="validez_hasta" type="text" name="validez_hasta" value="{{old('validez_hasta')}}">
+-                                    <label for="validez_hasta">Válido hasta:</label>
+-                                    @error('validez_hasta')
+-                                        <span class="invalid-feedback" role="alert">
+-                                            <strong style="color:red">{{ $message }}</strong>
+-                                        </span>
+-                                    @enderror
+-                                </div>
+                             </div>
+                             @endif
+ 
+@@ -201,8 +199,6 @@
+         });
+ 
+         @if($fechaManual)
+-        // validez_hasta sigue a fecha_uso hasta que el usuario la edite manualmente
+-        let validezTocadaManualmente = false;
+ 
+         const pickerFechaUso = $('#fecha_uso').pickadate({
+             format: 'dd-mm-yyyy',
+@@ -217,32 +213,6 @@
+             close: 'Cerrar',
+             firstDay: 1,
+         }).pickadate('picker');
+-
+-        const pickerValidezHasta = $('#validez_hasta').pickadate({
+-            format: 'dd-mm-yyyy',
+-            formatSubmit: 'yyyy-mm-dd',
+-            hiddenName: true,
+-            monthsFull: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],
+-            monthsShort: ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'],
+-            weekdaysFull: ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'],
+-            weekdaysShort: ['Do','Lu','Ma','Mi','Ju','Vi','Sá'],
+-            today: 'Hoy',
+-            clear: 'Limpiar',
+-            close: 'Cerrar',
+-            firstDay: 1,
+-        }).pickadate('picker');
+-
+-        pickerFechaUso.on('set', function (context) {
+-            if (context.select && !validezTocadaManualmente) {
+-                pickerValidezHasta.set('select', pickerFechaUso.get('select'), { muted: true });
+-            }
+-        });
+-
+-        pickerValidezHasta.on('set', function (context) {
+-            if (context.select) {
+-                validezTocadaManualmente = true;
+-            }
+-        });
+         @endif
+     });
+ 
+diff --git a/resources/views/themes/backoffice/pages/giftcard/edit.blade.php b/resources/views/themes/backoffice/pages/giftcard/edit.blade.php
+index e76d905..364f2d6 100644
+--- a/resources/views/themes/backoffice/pages/giftcard/edit.blade.php
++++ b/resources/views/themes/backoffice/pages/giftcard/edit.blade.php
+@@ -141,15 +141,10 @@
+                                         </span>
+                                     @enderror
+                                 </div>
+-
+                                 <div class="input-field col s12 m6 l3">
+-                                    <input id="validez_hasta" type="text" name="validez_hasta" value="{{ old('validez_hasta') ?? ($gc->validez_hasta ? \Carbon\Carbon::parse($gc->validez_hasta)->format('d-m-Y') : '') }}">
+-                                    <label for="validez_hasta" class="{{ $gc->validez_hasta ? 'active' : '' }}">Válido hasta:</label>
+-                                    @error('validez_hasta')
+-                                        <span class="invalid-feedback" role="alert">
+-                                            <strong style="color:red">{{ $message }}</strong>
+-                                        </span>
+-                                    @enderror
++                                    <input id="fecha_compra" type="date" name="fecha_compra" value="{{ old('fecha_compra', optional($gc->fecha_compra_real)->toDateString()) }}">
++                                    <label for="fecha_compra" class="active">Fecha de compra:</label>
++                                    <span class="helper-text">Vence el {{ $gc->valido }} (45 días después de la compra).</span>
+                                 </div>
+                             </div>
+ 
+@@ -221,7 +216,6 @@
+         };
+ 
+         $('#fecha_uso').pickadate(pickadateOpts);
+-        $('#validez_hasta').pickadate(pickadateOpts);
+     });
+ 
+     function actualizarMonto(valor, personas) {
+diff --git a/resources/views/themes/backoffice/pages/giftcard/index.blade.php b/resources/views/themes/backoffice/pages/giftcard/index.blade.php
+index a15b788..36fc066 100644
+--- a/resources/views/themes/backoffice/pages/giftcard/index.blade.php
++++ b/resources/views/themes/backoffice/pages/giftcard/index.blade.php
+@@ -42,7 +42,9 @@
+                                         <th>Código</th>
+                                         <th>Monto</th>
+                                         <th>Usada</th>
+-                                        <th>Valido hasta</th>
++                                        <th>Comprada</th>
++                                        <th>Vence</th>
++                                        <th>Vigencia</th>
+                                         <th>Acciones</th>
+                                     </tr>
+                                 </thead>
+@@ -53,7 +55,9 @@
+                                         <td>{{ $gc->codigo }}</td>
+                                         <td>${{ number_format($gc->monto, 0, ',', '.') }}</td>
+                                         <td>{{ $gc->usada ? 'Sí' : 'No' }}</td>
++                                        <td>{{ $gc->comprada }}</td>
+                                         <td>{{ $gc->valido }}</td>
++                                        <td><span class="badge white-text {{ $gc->vigencia['color'] }}" style="float:none">{{ $gc->vigencia['texto'] }}</span></td>
+                                         <td>
+                                             <a class="btn-small btn-floating blue" href="{{route('backoffice.giftcards.show', $gc)}}"><i class='material-icons'>remove_red_eye</i></a>
+                                             @if(!$mostrarUsadas == 'usadas')
+diff --git a/resources/views/themes/backoffice/pages/giftcard/show.blade.php b/resources/views/themes/backoffice/pages/giftcard/show.blade.php
+index 09a72eb..4481c3f 100644
+--- a/resources/views/themes/backoffice/pages/giftcard/show.blade.php
++++ b/resources/views/themes/backoffice/pages/giftcard/show.blade.php
+@@ -64,7 +64,8 @@ Gift Card solicitada por {{$gc->de}}
+                                         <h5 style="font-family: 'Pacifico', cursive; color: #00695c;">Gift Card 🎁</h5>
+                                         <p><strong>De:</strong> {{$gc->de}}</p>
+                                         <p><strong>Para:</strong> {{$gc->para}}</p>
+-                                        <p><strong>Válido hasta:</strong>{{$gc->valido}}</p>
++                                        <p><strong>Comprada el:</strong> {{ $gc->comprada }}</p>
++                                        <p><strong>Válido hasta:</strong> {{$gc->valido}} <span class="badge white-text {{ $gc->vigencia['color'] }}" style="float:none">{{ $gc->vigencia['texto'] }}</span></p>
+                                         <p style="margin-top: 40px;">Programa tu horario al WhatsApp:</p>
+                                         <h6><strong>+56 9 7448 4112</strong></h6>
+ 
+-- 
+2.43.0
+
