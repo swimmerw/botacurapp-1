@@ -1,0 +1,42 @@
+From 4275a26f68414ce0dc87f65d21ea5f14771e121c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 15:35:11 -0300
+Subject: [PATCH] Turnos: fijos por dia segun Sebastian
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ config/turnos.php | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/config/turnos.php b/config/turnos.php
+index d7f94fc..3d57a9d 100644
+--- a/config/turnos.php
++++ b/config/turnos.php
+@@ -29,14 +29,16 @@ return [
+     'cocina_por_personas'   => [10 => 1, 20 => 2, 35 => 3, 50 => 4, 9999 => 5],
+     'salario_cocina'        => 45000,
+ 
+-    // Costos fijos estimados por dia de la semana (personal que no depende de los clientes)
++    // Turnos fijos (no dependen de los clientes). Confirmado por Sebastian el 17/10/2026:
++    // Elohim lun-vie, Camila mar-sab, Fabiola lun y jue, Juan Carlos sab y dom.
++    // Gabriel y Octavio hasta el 31/10/2026.
+     'fijos' => [
+-        1 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
+-        2 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
+-        3 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
+-        4 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31'], ['Fabiola Geneus Sylvain', 45000]],
+-        5 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
+-        6 => [['Camila Wirlok', 100000], ['Elohim Azocar', 50000]],
++        1 => [['Elohim Azocar', 50000], ['Fabiola Geneus Sylvain', 45000], ['Gabriel Villar', 50000, '2026-10-31'], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        2 => [['Elohim Azocar', 50000], ['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        3 => [['Elohim Azocar', 50000], ['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        4 => [['Elohim Azocar', 50000], ['Camila Wirlok', 100000], ['Fabiola Geneus Sylvain', 45000], ['Gabriel Villar', 50000, '2026-10-31'], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        5 => [['Elohim Azocar', 50000], ['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        6 => [['Camila Wirlok', 100000], ['Juan Carlos Moncada', 40000]],
+         7 => [['Juan Carlos Moncada', 40000]],
+     ],
+ ];
+-- 
+2.43.0
+
