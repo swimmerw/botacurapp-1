@@ -1,0 +1,593 @@
+From 05004e9ce8f7df60d47e21064866130b5f1e0387 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 15:28:32 -0300
+Subject: [PATCH] Reporte del dia siguiente con turno sugerido y margen
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WYWHfq27HCG4nkZuN1ToCK
+---
+ app/Console/Commands/ReporteManana.php        | 167 ++++++++++
+ app/Console/Kernel.php                        |   4 +
+ app/Services/TurnosService.php                | 292 ++++++++++++++++++
+ config/turnos.php                             |  42 +++
+ ...7_000001_create_turnos_sugeridos_table.php |  31 ++
+ 5 files changed, 536 insertions(+)
+ create mode 100644 app/Console/Commands/ReporteManana.php
+ create mode 100644 app/Services/TurnosService.php
+ create mode 100644 config/turnos.php
+ create mode 100644 database/migrations/2026_10_17_000001_create_turnos_sugeridos_table.php
+
+diff --git a/app/Console/Commands/ReporteManana.php b/app/Console/Commands/ReporteManana.php
+new file mode 100644
+index 0000000..a634bd4
+--- /dev/null
++++ b/app/Console/Commands/ReporteManana.php
+@@ -0,0 +1,167 @@
++<?php
++
++namespace App\Console\Commands;
++
++use App\Services\TurnosService;
++use Carbon\Carbon;
++use Illuminate\Console\Command;
++use Illuminate\Support\Facades\Log;
++use Illuminate\Support\Facades\Mail;
++
++/**
++ * Reporte del dia siguiente (17/10/2026): sale a las 15:00 solo si al dia siguiente hay reservas.
++ * WhatsApp corto por el bot de sistema (Home Assistant) + correo con el detalle.
++ *   php artisan botacura:reporte-manana --probar            (muestra sin enviar)
++ *   php artisan botacura:reporte-manana --fecha=2026-10-24  (otra fecha)
++ */
++class ReporteManana extends Command
++{
++    protected $signature = 'botacura:reporte-manana {--fecha=} {--probar}';
++    protected $description = 'Reporte del dia siguiente con turno sugerido y margen estimado';
++
++    private function m($n)
++    {
++        return '$' . number_format((int) $n, 0, ',', '.');
++    }
++
++    public function handle()
++    {
++        $fecha = $this->option('fecha') ?: Carbon::now('America/Santiago')->addDay()->toDateString();
++        $plan = TurnosService::plan($fecha);
++
++        if ($plan['personas'] <= 0) {
++            $this->info('Sin reservas para ' . $fecha . ': no se envia nada.');
++            return 0;
++        }
++
++        $mes = TurnosService::mesALaFecha(Carbon::parse($fecha)->subDay()->toDateString());
++        $corto = $this->textoCorto($plan, $mes);
++        $largo = $this->textoLargo($plan, $mes);
++
++        if ($this->option('probar')) {
++            $this->line("WHATSAPP (" . mb_strlen($corto) . " caracteres):\n" . $corto . "\n");
++            $this->line("CORREO:\n" . $largo);
++            return 0;
++        }
++
++        TurnosService::guardarSugerencia($plan);
++        $this->enviarWhatsapp($corto);
++        $this->enviarCorreo($plan, $largo);
++        $this->info('Reporte enviado para ' . $fecha);
++        return 0;
++    }
++
++    private function textoCorto(array $p, array $mes): string
++    {
++        $progs = collect($p['programas'])->map(function ($n, $k) {
++            return $n . ' ' . $k;
++        })->implode(', ');
++        $nombres = collect($p['atencion']['elegidos'])->map(function ($x) {
++            return explode(' ', $x['nombre'])[0];
++        })->implode(', ');
++        $t = 'Mañana ' . $p['etiqueta'] . ': ' . $p['personas'] . ' personas en ' . $p['reservas'] . ' reserva' . ($p['reservas'] === 1 ? '' : 's')
++            . ' · ' . $progs
++            . ' · ' . $p['masajes'] . ' masajes' . ($p['masajes_desde'] ? ' (' . $p['masajes_desde'] . '-' . $p['masajes_hasta'] . ')' : '')
++            . ' · ' . $p['almuerzos'] . ' almuerzos' . ($p['desayunos'] ? ', ' . $p['desayunos'] . ' desayunos' : '') . ($p['onces'] ? ', ' . $p['onces'] . ' onces' : '')
++            . ' · Atención ' . $p['horario'] . ': ' . ($nombres ?: 'nadie disponible') . ($p['atencion']['falta'] ? ' (faltan ' . $p['atencion']['falta'] . ')' : '')
++            . ' · Cocina: ' . $p['n_cocina']
++            . ' · Margen estimado ' . ($p['margen'] === null ? '-' : $p['margen'] . '%') . ($p['margen'] !== null && $p['margen'] < $p['meta'] ? ' (bajo ' . $p['meta'] . '%)' : '')
++            . ' · Mes: ' . ($mes['margen'] === null ? '-' : $mes['margen'] . '%') . ', IVA a separar ' . $this->m($mes['iva']);
++        return mb_substr($t, 0, 650);
++    }
++
++    private function textoLargo(array $p, array $mes): string
++    {
++        $c = $p['costos'];
++        $l = [];
++        $l[] = 'REPORTE DE MAÑANA: ' . mb_strtoupper($p['etiqueta']);
++        $l[] = '';
++        $l[] = $p['personas'] . ' personas en ' . $p['reservas'] . ' reservas';
++        foreach ($p['programas'] as $nombre => $n) {
++            $l[] = '  - ' . $n . ' ' . $nombre;
++        }
++        $l[] = 'Masajes: ' . $p['masajes'] . ($p['masajes_desde'] ? ' (de ' . $p['masajes_desde'] . ' a ' . $p['masajes_hasta'] . ')' : '');
++        $l[] = 'Almuerzos: ' . $p['almuerzos'] . ' · Desayunos: ' . $p['desayunos'] . ' · Onces: ' . $p['onces'];
++        $l[] = '';
++        $l[] = 'TURNO SUGERIDO (' . $p['horario'] . ')';
++        $l[] = 'Atención al cliente (' . $p['n_atencion'] . '):';
++        foreach ($p['atencion']['elegidos'] as $x) {
++            $l[] = '  - ' . $x['nombre'] . ' (' . $x['semana'] . ' día(s) esta semana) ' . $this->m($x['salario']);
++        }
++        if ($p['atencion']['falta']) {
++            $l[] = '  ! Faltan ' . $p['atencion']['falta'] . ' persona(s): no hay más disponibles ese día.';
++        }
++        $l[] = 'Cocina: ' . $p['n_cocina'] . ' persona(s)';
++        $l[] = '';
++        $l[] = 'MARGEN ESTIMADO DEL DÍA';
++        $l[] = 'Ingreso con IVA: ' . $this->m($p['ingreso_bruto']) . ' (programas ' . $this->m($p['ingreso_bruto'] - $p['consumo_est']) . ' + consumo estimado ' . $this->m($p['consumo_est']) . ')';
++        $l[] = 'Ingreso sin IVA: ' . $this->m($p['ingreso_neto']) . ' (IVA ' . $this->m($p['ingreso_bruto'] - $p['ingreso_neto']) . ')';
++        $l[] = 'Atención ' . $this->m($c['atencion']) . ' · Cocina ' . $this->m($c['cocina']) . ' · Masajes ' . $this->m($c['masajes'])
++            . ' · Fijos ' . $this->m($c['fijos']) . ' · Insumos ' . $this->m($c['insumos']) . ' (' . config('turnos.insumos_pct') . '%)';
++        $l[] = 'Costo total: ' . $this->m($c['total']) . ' → margen ' . ($p['margen'] === null ? '-' : $p['margen'] . '%') . ' (meta ' . $p['meta'] . '%)';
++        if ($p['margen'] !== null && $p['margen'] < $p['meta']) {
++            $l[] = '! Bajo la meta: revisar si se necesita todo el personal fijo ese día (' . collect($p['fijos'])->pluck('nombre')->implode(', ') . ').';
++        }
++        $l[] = '';
++        $l[] = 'MES A LA FECHA (' . Carbon::parse($mes['desde'])->format('d/m') . ' al ' . Carbon::parse($mes['hasta'])->format('d/m') . ')';
++        $l[] = 'Ingreso sin IVA ' . $this->m($mes['neto']) . ' · Sueldos ' . $this->m($mes['sueldos'])
++            . ($mes['sueldos_estimados'] ? ' (incluye ' . $this->m($mes['sueldos_estimados']) . ' estimado de días aún no cerrados)' : '')
++            . ' · Masajes ' . $this->m($mes['masajes']) . ' · Insumos ' . $this->m($mes['insumos']);
++        $l[] = 'Resultado ' . $this->m($mes['resultado']) . ' → margen ' . ($mes['margen'] === null ? '-' : $mes['margen'] . '%');
++        $l[] = 'IVA de las ventas del mes (a separar): ' . $this->m($mes['iva']);
++        $l[] = '';
++        $l[] = 'RESERVAS';
++        foreach ($p['detalle'] as $r) {
++            $l[] = '#' . $r['id'] . ' ' . $r['cliente'] . ' · ' . $r['personas'] . ' p · ' . $r['programa'] . ($r['estado'] && $r['estado'] !== 'confirmada' ? ' · ' . $r['estado'] : '');
++            if ($r['masajes']) {
++                $l[] = '   Masajes: ' . implode(', ', $r['masajes']);
++            }
++            if ($r['obs']) {
++                $l[] = '   Obs: ' . $r['obs'];
++            }
++        }
++        return implode("\n", $l);
++    }
++
++    private function enviarWhatsapp(string $texto): void
++    {
++        $url = trim((string) env('HA_ALERTA_WEBHOOK', ''));
++        if ($url === '') {
++            Log::warning('[ReporteManana] Falta HA_ALERTA_WEBHOOK');
++            return;
++        }
++        try {
++            $ch = curl_init($url);
++            curl_setopt_array($ch, [
++                CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15,
++                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
++                CURLOPT_POSTFIELDS => json_encode(['mensaje' => $texto], JSON_UNESCAPED_UNICODE),
++            ]);
++            curl_exec($ch);
++            curl_close($ch);
++        } catch (\Throwable $e) {
++            Log::warning('[ReporteManana] WhatsApp: ' . $e->getMessage());
++        }
++    }
++
++    private function enviarCorreo(array $p, string $texto): void
++    {
++        $destinos = array_filter(array_map('trim', explode(',', (string) env('TURNOS_CORREO', ''))));
++        if (! $destinos) {
++            $c = \App\BotSeccionTexto::where('clave', 'alerta_correo')->value('contenido');
++            if ($c) {
++                $destinos = [$c];
++            }
++        }
++        if (! $destinos) {
++            return;
++        }
++        try {
++            Mail::raw($texto, function ($m) use ($destinos, $p) {
++                $m->to($destinos)->subject('Botacura mañana ' . $p['etiqueta'] . ': ' . $p['personas'] . ' personas · margen ' . ($p['margen'] ?? '-') . '%');
++            });
++        } catch (\Throwable $e) {
++            Log::warning('[ReporteManana] Correo: ' . $e->getMessage());
++        }
++    }
++}
+diff --git a/app/Console/Kernel.php b/app/Console/Kernel.php
+index 4c990a9..aa4b403 100644
+--- a/app/Console/Kernel.php
++++ b/app/Console/Kernel.php
+@@ -27,6 +27,10 @@ class Kernel extends ConsoleKernel
+     protected function schedule(Schedule $schedule)
+     {
+         $schedule->command('bot:aprender')->dailyAt('23:40');
++        // Reporte del dia siguiente con turno sugerido (17/10/2026)
++        $schedule->command('botacura:reporte-manana')
++                ->dailyAt(config('turnos.hora_reporte', '15:00'))
++                ->timezone('America/Santiago');
+         // Inventario: corrige descuentos de ventas que no dispararon observer
+         $schedule->command('inventario:conciliar')->hourly()->withoutOverlapping(30);
+         // Detalle (productos) de las facturas recibidas, una hora después de la sync SII
+diff --git a/app/Services/TurnosService.php b/app/Services/TurnosService.php
+new file mode 100644
+index 0000000..cad5260
+--- /dev/null
++++ b/app/Services/TurnosService.php
+@@ -0,0 +1,292 @@
++<?php
++
++namespace App\Services;
++
++use App\Reserva;
++use App\User;
++use Carbon\Carbon;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
++
++/**
++ * Plan del dia siguiente: asistentes, programas, masajes, comidas, turno sugerido de
++ * atencion al cliente y margen estimado. Tambien el resultado del mes a la fecha.
++ * 17/10/2026. Parametros en config/turnos.php.
++ */
++class TurnosService
++{
++    private static function cfg($k, $def = null)
++    {
++        return config('turnos.' . $k, $def);
++    }
++
++    private static function cantidadPor(array $tabla, int $personas): int
++    {
++        ksort($tabla);
++        foreach ($tabla as $hasta => $n) {
++            if ($personas <= $hasta) {
++                return (int) $n;
++            }
++        }
++        return (int) end($tabla);
++    }
++
++    private static function salario(string $nombre, int $defecto = 45000): int
++    {
++        static $cache = [];
++        if (! array_key_exists($nombre, $cache)) {
++            try {
++                $u = User::where('name', 'like', trim($nombre) . '%')->first();
++                $cache[$nombre] = $u ? ['id' => $u->id, 'salario' => (int) ($u->salario ?: $defecto)] : ['id' => null, 'salario' => $defecto];
++            } catch (\Throwable $e) {
++                $cache[$nombre] = ['id' => null, 'salario' => $defecto];
++            }
++        }
++        return $cache[$nombre]['salario'];
++    }
++
++    private static function userId(string $nombre): ?int
++    {
++        try {
++            $u = User::where('name', 'like', trim($nombre) . '%')->value('id');
++            return $u ? (int) $u : null;
++        } catch (\Throwable $e) {
++            return null;
++        }
++    }
++
++    /** Pago al masoterapeuta por un masaje (segun tipo y duracion). */
++    public static function pagoMasaje($masaje): int
++    {
++        static $mapa = null;
++        if ($mapa === null) {
++            $mapa = [];
++            if (Schema::hasTable('precios_tipos_masajes')) {
++                foreach (DB::table('precios_tipos_masajes as p')->join('tipos_masajes as t', 't.id', '=', 'p.id_tipo_masaje')
++                    ->whereNotNull('p.pago_masoterapeuta')->get(['t.nombre', 'p.duracion_minutos', 'p.pago_masoterapeuta']) as $p) {
++                    $mapa[mb_strtolower(trim($p->nombre)) . '|' . (int) $p->duracion_minutos] = (int) $p->pago_masoterapeuta;
++                }
++            }
++        }
++        $dur = $masaje->tiempo_extra ? 60 : 30;
++        $k = mb_strtolower(trim((string) $masaje->tipo_masaje)) . '|' . $dur;
++        $base = (int) self::cfg('pago_masaje_defecto', 10000);
++        return $mapa[$k] ?? ($dur === 60 ? $base * 2 : $base);
++    }
++
++    private static function reservasDe(string $fecha)
++    {
++        $q = Reserva::with(['cliente', 'programa.servicios', 'masajes', 'menus', 'desayunoOnce'])->whereDate('fecha_visita', $fecha);
++        if (Schema::hasColumn('reservas', 'estado')) {
++            $q->where(function ($w) {
++                $w->whereNull('estado')->orWhereNotIn('estado', ['cancelada', 'no_show']);
++            });
++        }
++        return $q->get();
++    }
++
++    /** Valor de programas de una reserva (con IVA). */
++    public static function valorProgramas(Reserva $r): int
++    {
++        $total = 0;
++        foreach ($r->detalleProgramas() as $p) {
++            $v = $p->valor_unitario ?? optional($p->programa)->valor_programa;
++            $total += (int) $v * (int) $p->personas;
++        }
++        return $total;
++    }
++
++    /** Elige el personal de atencion para la fecha, repartiendo entre quienes llevan menos dias. */
++    public static function elegirAtencion(Carbon $f, int $cantidad): array
++    {
++        $dia = (int) $f->dayOfWeekIso;
++        $disponibles = collect(self::cfg('atencion', []))->filter(function ($p) use ($dia, $f) {
++            return in_array($dia, $p['dias'] ?? [], true) && (empty($p['hasta']) || $f->toDateString() <= $p['hasta']);
++        })->values();
++
++        $ini = $f->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
++        $fin = $f->copy()->endOfWeek(Carbon::SUNDAY)->toDateString();
++        $hay = Schema::hasTable('turnos_sugeridos');
++        $orden = $disponibles->map(function ($p) use ($ini, $fin, $f, $hay) {
++            $semana = $hay ? DB::table('turnos_sugeridos')->where('nombre', $p['nombre'])->whereBetween('fecha', [$ini, $fin])->where('fecha', '<>', $f->toDateString())->count() : 0;
++            $quince = $hay ? DB::table('turnos_sugeridos')->where('nombre', $p['nombre'])->where('fecha', '>=', $f->copy()->subDays(14)->toDateString())->where('fecha', '<', $f->toDateString())->count() : 0;
++            return $p + ['semana' => $semana, 'quince' => $quince, 'salario' => self::salario($p['nombre'])];
++        })->sortBy(function ($p) {
++            return sprintf('%02d-%02d-%s', $p['semana'], $p['quince'], $p['nombre']);
++        })->values();
++
++        return [
++            'elegidos'    => $orden->take($cantidad)->values()->all(),
++            'disponibles' => $orden->count(),
++            'falta'       => max(0, $cantidad - $orden->count()),
++        ];
++    }
++
++    /** Costos fijos del dia de la semana. */
++    public static function fijos(Carbon $f): array
++    {
++        $out = [];
++        foreach (self::cfg('fijos.' . $f->dayOfWeekIso, []) as $x) {
++            if (! empty($x[2]) && $f->toDateString() > $x[2]) {
++                continue;
++            }
++            $out[] = ['nombre' => $x[0], 'monto' => (int) $x[1]];
++        }
++        return $out;
++    }
++
++    /** Plan completo de una fecha. */
++    public static function plan(string $fecha): array
++    {
++        $f = Carbon::parse($fecha);
++        $reservas = self::reservasDe($f->toDateString());
++        $personas = (int) $reservas->sum('cantidad_personas');
++
++        $programas = [];
++        $ingresoProg = 0;
++        $desayunos = 0;
++        $onces = 0;
++        $masajes = collect();
++        $menus = 0;
++        $detalle = [];
++        foreach ($reservas as $r) {
++            foreach ($r->detalleProgramas() as $p) {
++                $n = optional($p->programa)->nombre_programa ?: 'Sin programa';
++                $programas[$n] = ($programas[$n] ?? 0) + (int) $p->personas;
++            }
++            $ingresoProg += self::valorProgramas($r);
++            foreach ($r->desayunoOnce as $d) {
++                if ($d->tipo === 'desayuno') {
++                    $desayunos += $r->personasDesayunoOnce();
++                } elseif ($d->tipo === 'once') {
++                    $onces += $r->personasDesayunoOnce();
++                }
++            }
++            $masajes = $masajes->merge($r->masajes);
++            $menus += $r->menus->count();
++            $detalle[] = [
++                'id'       => $r->id,
++                'cliente'  => optional($r->cliente)->nombre_cliente,
++                'personas' => (int) $r->cantidad_personas,
++                'programa' => $r->programas_texto,
++                'estado'   => $r->estado ?? null,
++                'masajes'  => $r->masajes->map(function ($m) {
++                    return ($m->horario_masaje ?: 'sin hora') . ' ' . ($m->tipo_masaje ?: '') . ($m->tiempo_extra ? ' (60)' : '');
++                })->values()->all(),
++                'obs'      => $r->observacion,
++            ];
++        }
++        arsort($programas);
++
++        $nAtencion = $personas > 0 ? self::cantidadPor(self::cfg('atencion_por_personas', []), $personas) : 0;
++        $nCocina = $personas > 0 ? self::cantidadPor(self::cfg('cocina_por_personas', []), $personas) : 0;
++        $atencion = self::elegirAtencion($f, $nAtencion);
++
++        $iva = (float) self::cfg('iva', 0.19);
++        $consumoEst = $personas * (int) self::cfg('consumo_por_persona', 12500);
++        $bruto = $ingresoProg + $consumoEst;
++        $neto = (int) round($bruto / (1 + $iva));
++        $costoAtencion = (int) collect($atencion['elegidos'])->sum('salario');
++        $costoCocina = $nCocina * (int) self::cfg('salario_cocina', 45000);
++        $costoMasajes = (int) $masajes->sum(function ($m) {
++            return self::pagoMasaje($m);
++        });
++        $fijos = self::fijos($f);
++        $costoFijos = (int) collect($fijos)->sum('monto');
++        $insumos = (int) round($neto * (int) self::cfg('insumos_pct', 15) / 100);
++        $costo = $costoAtencion + $costoCocina + $costoMasajes + $costoFijos + $insumos;
++        $margen = $neto > 0 ? round(100 * ($neto - $costo) / $neto) : null;
++
++        $horas = $masajes->pluck('horario_masaje')->filter()->sort()->values();
++
++        return [
++            'fecha'      => $f->toDateString(),
++            'etiqueta'   => $f->locale('es')->isoFormat('dddd D/MM'),
++            'reservas'   => $reservas->count(),
++            'personas'   => $personas,
++            'programas'  => $programas,
++            'masajes'    => $masajes->count(),
++            'masajes_desde' => $horas->first(),
++            'masajes_hasta' => $horas->last(),
++            'almuerzos'  => $menus ?: $personas,
++            'desayunos'  => $desayunos,
++            'onces'      => $onces,
++            'detalle'    => $detalle,
++            'n_atencion' => $nAtencion,
++            'atencion'   => $atencion,
++            'n_cocina'   => $nCocina,
++            'horario'    => self::cfg('horario', '09:30 a 19:30'),
++            'ingreso_bruto' => $bruto,
++            'ingreso_neto'  => $neto,
++            'consumo_est'   => $consumoEst,
++            'costos' => [
++                'atencion' => $costoAtencion, 'cocina' => $costoCocina, 'masajes' => $costoMasajes,
++                'fijos' => $costoFijos, 'insumos' => $insumos, 'total' => $costo,
++            ],
++            'fijos'  => $fijos,
++            'margen' => $margen,
++            'meta'   => (int) self::cfg('margen_meta', 40),
++        ];
++    }
++
++    /** Resultado del mes a la fecha (dias ya trabajados), con sueldos reales. */
++    public static function mesALaFecha(?string $hasta = null): array
++    {
++        $hasta = Carbon::parse($hasta ?: now()->toDateString());
++        $desde = $hasta->copy()->startOfMonth();
++        $iva = (float) self::cfg('iva', 0.19);
++        $bruto = 0;
++        $masajes = 0;
++        $personas = 0;
++        $reservas = Reserva::with(['programa', 'masajes', 'venta.consumo'])
++            ->whereDate('fecha_visita', '>=', $desde->toDateString())->whereDate('fecha_visita', '<=', $hasta->toDateString())
++            ->when(Schema::hasColumn('reservas', 'estado'), function ($q) {
++                $q->where(function ($w) {
++                    $w->whereNull('estado')->orWhereNotIn('estado', ['cancelada', 'no_show']);
++                });
++            })->get();
++        foreach ($reservas as $r) {
++            $bruto += self::valorProgramas($r) + (int) optional(optional($r->venta)->consumo)->subtotal;
++            $masajes += (int) $r->masajes->sum(function ($m) {
++                return self::pagoMasaje($m);
++            });
++            $personas += (int) $r->cantidad_personas;
++        }
++        $neto = (int) round($bruto / (1 + $iva));
++        $sueldos = (int) DB::table('sueldos')->whereBetween('dia_trabajado', [$desde->toDateString(), $hasta->toDateString()])->sum('valor_dia');
++        // Dias trabajados cuyos sueldos aun no se cierran (el cierre es semanal): se estiman con el plan
++        $estimados = 0;
++        $diasPagados = DB::table('sueldos')->whereBetween('dia_trabajado', [$desde->toDateString(), $hasta->toDateString()])
++            ->pluck('dia_trabajado')->map(function ($d) { return substr((string) $d, 0, 10); })->unique()->all();
++        foreach ($reservas->groupBy(function ($r) { return Carbon::parse($r->getOriginal('fecha_visita'))->toDateString(); }) as $dia => $grupo) {
++            if (! in_array($dia, $diasPagados, true)) {
++                $pl = self::plan($dia);
++                $estimados += $pl['costos']['atencion'] + $pl['costos']['cocina'] + $pl['costos']['fijos'];
++            }
++        }
++        $sueldos += $estimados;
++        $insumos = (int) round($neto * (int) self::cfg('insumos_pct', 15) / 100);
++        $resultado = $neto - $sueldos - $masajes - $insumos;
++        return [
++            'desde' => $desde->toDateString(), 'hasta' => $hasta->toDateString(),
++            'personas' => $personas, 'bruto' => $bruto, 'neto' => $neto, 'iva' => $bruto - $neto,
++            'sueldos' => $sueldos, 'sueldos_estimados' => $estimados, 'masajes' => $masajes, 'insumos' => $insumos,
++            'resultado' => $resultado, 'margen' => $neto > 0 ? round(100 * $resultado / $neto) : null,
++        ];
++    }
++
++    /** Guarda el turno sugerido (para repartir los dias y, despues, avisar a cada persona). */
++    public static function guardarSugerencia(array $plan): void
++    {
++        if (! Schema::hasTable('turnos_sugeridos')) {
++            return;
++        }
++        DB::table('turnos_sugeridos')->where('fecha', $plan['fecha'])->delete();
++        foreach ($plan['atencion']['elegidos'] as $p) {
++            DB::table('turnos_sugeridos')->insert([
++                'fecha' => $plan['fecha'], 'nombre' => $p['nombre'], 'user_id' => self::userId($p['nombre']),
++                'area' => 'atencion', 'created_at' => now(), 'updated_at' => now(),
++            ]);
++        }
++    }
++}
+diff --git a/config/turnos.php b/config/turnos.php
+new file mode 100644
+index 0000000..d7f94fc
+--- /dev/null
++++ b/config/turnos.php
+@@ -0,0 +1,42 @@
++<?php
++
++/*
++ * Planificacion de turnos y reporte del dia siguiente (17/10/2026).
++ * Dias: 1 = lunes ... 7 = domingo. "hasta" = ultimo dia que trabaja (AAAA-MM-DD) o null.
++ * El salario se lee del usuario en la app (por nombre); "salario" aqui solo si no se encuentra.
++ */
++return [
++    'hora_reporte' => env('TURNOS_HORA_REPORTE', '15:00'),
++    'horario'      => env('TURNOS_HORARIO', '09:30 a 19:30'),
++    'margen_meta'  => 40,          // %
++    'iva'          => 0.19,
++    'insumos_pct'  => 15,          // % del ingreso neto (estimado hasta tener inventario)
++    'consumo_por_persona' => 12500, // promedio historico abr-oct 2026
++    'pago_masaje_defecto' => 10000,
++
++    // Atencion al cliente: quienes pueden y que dias
++    'atencion' => [
++        ['nombre' => 'Juan Guzmán',          'dias' => [1, 2, 3, 4, 5, 6, 7]],
++        ['nombre' => 'Catalina Maureira',    'dias' => [1, 2, 3, 4, 5, 6, 7]],
++        ['nombre' => 'Fernando Morales',     'dias' => [1, 2, 3, 4, 5, 6, 7]],
++        ['nombre' => 'Pamela Tapia',         'dias' => [4, 5, 6, 7]],
++        ['nombre' => 'David Tapia',          'dias' => [4, 5, 6, 7]],
++        ['nombre' => 'Francisca Bahamondes', 'dias' => [1, 2, 3, 4, 5]],
++    ],
++
++    // Cuantas personas de atencion y de cocina segun asistentes (hasta N personas => cantidad)
++    'atencion_por_personas' => [10 => 2, 20 => 3, 35 => 4, 50 => 5, 9999 => 6],
++    'cocina_por_personas'   => [10 => 1, 20 => 2, 35 => 3, 50 => 4, 9999 => 5],
++    'salario_cocina'        => 45000,
++
++    // Costos fijos estimados por dia de la semana (personal que no depende de los clientes)
++    'fijos' => [
++        1 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        2 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        3 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        4 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31'], ['Fabiola Geneus Sylvain', 45000]],
++        5 => [['Camila Wirlok', 100000], ['Gabriel Villar', 50000, '2026-10-31'], ['Elohim Azocar', 50000], ['Juan Carlos Moncada', 40000], ['Octavio Peñaloza', 40000, '2026-10-31']],
++        6 => [['Camila Wirlok', 100000], ['Elohim Azocar', 50000]],
++        7 => [['Juan Carlos Moncada', 40000]],
++    ],
++];
+diff --git a/database/migrations/2026_10_17_000001_create_turnos_sugeridos_table.php b/database/migrations/2026_10_17_000001_create_turnos_sugeridos_table.php
+new file mode 100644
+index 0000000..96ca008
+--- /dev/null
++++ b/database/migrations/2026_10_17_000001_create_turnos_sugeridos_table.php
+@@ -0,0 +1,31 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++/** Turnos sugeridos por el reporte del dia siguiente (17/10/2026). */
++class CreateTurnosSugeridosTable extends Migration
++{
++    public function up()
++    {
++        if (Schema::hasTable('turnos_sugeridos')) {
++            return;
++        }
++        Schema::create('turnos_sugeridos', function (Blueprint $table) {
++            $table->increments('id');
++            $table->date('fecha');
++            $table->string('nombre', 120);
++            $table->unsignedInteger('user_id')->nullable();
++            $table->string('area', 30)->default('atencion');
++            $table->timestamp('avisado_at')->nullable();
++            $table->timestamps();
++            $table->index(['fecha', 'area']);
++        });
++    }
++
++    public function down()
++    {
++        Schema::dropIfExists('turnos_sugeridos');
++    }
++}
+-- 
+2.43.0
+
