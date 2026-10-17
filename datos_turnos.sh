@@ -15,10 +15,10 @@ foreach (DB::table("roles")->orderBy("id")->get() as $r) {
   echo $r->id.";".$r->slug.";".$r->name.";activos=".$act.";base=".($base ?? "-")."\n";
 }
 if (Schema::hasColumn("users","salario")) {
-  echo "== SALARIO POR USUARIO ACTIVO (rol;salario dia) \n";
+  echo "== PERSONAL ACTIVO (nombre;rol;salario dia) \n";
   foreach (DB::table("users")->join("role_user","users.id","=","role_user.user_id")->join("roles","roles.id","=","role_user.role_id")
     ->when(Schema::hasColumn("users","activo"), function($q){ $q->where("users.activo",1); })
-    ->select("roles.slug","users.salario","users.id")->orderBy("roles.slug")->get() as $u) echo $u->slug.";".$u->salario.";u".$u->id."\n";
+    ->select("roles.slug","users.salario","users.id","users.name")->orderBy("users.name")->get() as $u) echo $u->name.";".$u->slug.";".$u->salario."\n";
 }
 echo "== PAGO MASOTERAPEUTA POR TIPO (duracion;precio;pago)\n";
 foreach (DB::table("precios_tipos_masajes as p")->join("tipos_masajes as t","t.id","=","p.id_tipo_masaje")->select("t.nombre","p.duracion_minutos","p.precio_unitario","p.pago_masoterapeuta")->get() as $p)
