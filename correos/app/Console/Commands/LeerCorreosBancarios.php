@@ -8,7 +8,6 @@ use App\Finanzas\Correo\Lector;
 use App\Finanzas\Correo\Mime;
 use App\Finanzas\Correo\Seguridad;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -31,32 +30,48 @@ class LeerCorreosBancarios extends Command
             return $this->recruzar($conc);
         }
         $cfg = config('finanzas.imap');
-        if (empty($cfg['clave'])) {
-            $this->error('Falta FIN_IMAP_PASS en el .env (contraseña de aplicación de ' . $cfg['usuario'] . ').');
-            return 1;
-        }
         $dias = (int) ($this->option('dias') ?: $cfg['dias']);
+        $error = 0;
+        foreach ($cfg['buzones'] as $b) {
+            if (empty($b['clave'])) {
+                $this->warn("{$b['usuario']}: falta su contraseña de aplicación en el .env; no se lee.");
+                continue;
+            }
+            try {
+                $this->leerBuzon($b, $cfg, $dias, $conc);
+            } catch (\Throwable $e) {
+                $error = 1;
+                $this->error("{$b['usuario']}: " . $e->getMessage());
+                \Illuminate\Support\Facades\Log::warning('[FinCorreos] ' . $b['usuario'] . ': ' . $e->getMessage());
+            }
+        }
+        return $error;
+    }
+
+    private function leerBuzon(array $b, array $cfg, int $dias, ConciliadorAbonos $conc): void
+    {
         $prueba = (bool) $this->option('prueba');
         $nuevos = ['abono' => 0, 'pago' => 0, 'traspaso' => 0, 'cuenta' => 0, 'cartola' => 0, 'factura' => 0];
+        $hayBuzon = \Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'buzon');
 
         $imap = new ImapCliente($cfg['host'], $cfg['port']);
         try {
-            $imap->login($cfg['usuario'], $cfg['clave']);
-            $carpeta = $imap->seleccionar($cfg['carpeta']);
+            $imap->login($b['usuario'], $b['clave']);
+            $carpeta = $imap->seleccionar($b['carpeta']);
             $uids = $imap->uidsDesde(new \DateTime("-{$dias} days"));
             $cabs = $uids ? $imap->cabeceras($uids) : [];
-            $this->line(count($uids) . " correos en {$dias} días en \"{$carpeta}\"; revisando los que pueden traer plata…");
+            $this->line("{$b['usuario']}: " . count($uids) . " correos en {$dias} días en \"{$carpeta}\"…");
 
             foreach ($cabs as $uid => $raw) {
                 $h = Mime::cabeceras(str_replace("\n", "\r\n", str_replace("\r\n", "\n", $raw)) . "\r\n\r\n");
-                $mid = trim($h['message-id'] ?? '') ?: ('uid-' . $uid . '-' . md5($raw));
+                $mid = mb_substr(trim($h['message-id'] ?? '') ?: ('uid-' . $b['usuario'] . '-' . $uid), 0, 191);
                 $de = Mime::remitente($h['from'] ?? '');
                 $asunto = $h['subject'] ?? '';
-                if (!$this->interesa($de, $asunto) || Cache::has('fincorreo:' . md5($mid))) {
+                if (!$this->interesa($de, $asunto)) {
                     continue;
                 }
-                if (!$prueba && DB::table('fin_correos')->where('message_id', $mid)->exists()) {
-                    continue;
+                if (DB::table('fin_correos')->where('message_id', $mid)->exists()) {
+                    continue; // ya leído (también los que no traían plata)
                 }
                 $completo = $imap->correo($uid);
                 if (!$completo) {
@@ -64,23 +79,29 @@ class LeerCorreosBancarios extends Command
                 }
                 $texto = Mime::texto($completo);
                 $fechaCorreo = $h['date'] ?? null;
+                $recibido = $fechaCorreo && strtotime($fechaCorreo) ? date('Y-m-d H:i:s', strtotime($fechaCorreo)) : now();
                 $d = Lector::leer($de, $asunto, $texto, $fechaCorreo);
+                $base = ['message_id' => $mid, 'uid' => $uid, 'recibido_at' => $recibido,
+                         'remitente' => mb_substr($de, 0, 120), 'asunto' => mb_substr($asunto, 0, 191),
+                         'created_at' => now(), 'updated_at' => now()];
+                if ($hayBuzon) {
+                    $base['buzon'] = mb_substr($b['usuario'], 0, 60);
+                }
                 if (!$d['tipo']) {
-                    Cache::put('fincorreo:' . md5($mid), 1, now()->addDays(10));
+                    if (!$prueba) { // se anota para no volver a descargarlo
+                        DB::table('fin_correos')->insert($base + ['tipo' => 'otro', 'estado' => 'ignorado', 'banco' => $d['banco']]);
+                    }
                     continue;
                 }
                 $nuevos[$d['tipo']]++;
                 $seg = Seguridad::evaluar($de, $completo);
                 if ($prueba) {
-                    $this->line(sprintf('%-7s %-7s %s %s %-28s %12s %s', $d['tipo'], $seg['seguridad'], $d['fecha'], $d['hora'],
-                        mb_substr($d['nombre'] ?: ($d['proveedor'] ?: $d['banco']), 0, 28),
+                    $this->line(sprintf('%-8s %-7s %s %s %-30s %12s %s', $d['tipo'], $seg['seguridad'], $d['fecha'], $d['hora'],
+                        mb_substr($d['nombre'] ?: ($d['proveedor'] ?: $d['banco']), 0, 30),
                         $d['monto'] ? '$' . number_format($d['monto'], 0, ',', '.') : '-', $d['operacion']));
                     continue;
                 }
-                $id = DB::table('fin_correos')->insertGetId([
-                    'message_id' => mb_substr($mid, 0, 191), 'uid' => $uid,
-                    'recibido_at' => $fechaCorreo && strtotime($fechaCorreo) ? date('Y-m-d H:i:s', strtotime($fechaCorreo)) : now(),
-                    'remitente' => mb_substr($de, 0, 120), 'asunto' => mb_substr($asunto, 0, 191),
+                $id = DB::table('fin_correos')->insertGetId($base + [
                     'tipo' => $d['tipo'], 'banco' => $d['banco'], 'proveedor' => $d['proveedor'],
                     'nombre' => $d['nombre'] ? mb_substr($d['nombre'], 0, 120) : null, 'rut' => $d['rut'],
                     'monto' => $d['monto'], 'fecha' => $d['fecha'], 'hora' => $d['hora'],
@@ -91,7 +112,6 @@ class LeerCorreosBancarios extends Command
                         : (in_array($d['tipo'], ['cartola', 'factura'], true) ? 'ignorado' : 'nuevo'),
                     'seguridad' => $seg['seguridad'], 'seguridad_detalle' => mb_substr($seg['detalle'], 0, 191),
                     'texto' => mb_substr($texto, 0, 8000),
-                    'created_at' => now(), 'updated_at' => now(),
                 ]);
                 if ($d['tipo'] === 'abono' && $seg['seguridad'] !== 'falso') {
                     $c = DB::table('fin_correos')->where('id', $id)->first();
@@ -101,8 +121,7 @@ class LeerCorreosBancarios extends Command
         } finally {
             $imap->salir();
         }
-        $this->info('Nuevos: ' . json_encode($nuevos));
-        return 0;
+        $this->info("{$b['usuario']} nuevos: " . json_encode($nuevos));
     }
 
     private function interesa(string $de, string $asunto): bool

@@ -1,25 +1,29 @@
 #!/bin/bash
 # Finanzas fase 1 (19/10/2026): lectura automatica de correos bancarios.
-#  - Abonos recibidos (avisos de BancoEstado, Banco de Chile, Santander, Falabella, Scotiabank, Bci...)
-#    y su cruce con reservas, abonos extra y comprobantes del bot en revision.
-#  - Pagos hechos por Botacura, cuentas por pagar (Movistar, API Gateway...), cartolas y facturas.
+#  - Abonos recibidos, pagos, traspasos entre cuentas, cuentas por pagar, cartolas y facturas.
 #  - Cada correo se verifica con la firma DKIM del banco (dominio oficial): solo los verificados se cruzan solos.
-#  - Vista Finanzas > Correos bancarios (solo FINANZAS_USUARIOS) y lectura cada 5 minutos.
+#  - Buzones: botacura.info@gmail.com y (opcional) el personal de Sebastian.
+#  - Vista Finanzas > Correos bancarios (solo FINANZAS_USUARIOS), lectura cada 5 minutos
+#    y marca "en el banco" en Finanzas > Reservas del dia.
 # No cambia estados de ventas ni reservas: solo lee, guarda y marca.
 cd /var/www/html/botacurapp || exit 1
-U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/parches-finanzas/correos
-F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php"
+# Version fija del ultimo cambio (evita la cache de GitHub)
+SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parches-finanzas | grep -m1 '"sha"' | cut -d'"' -f4)
+[ -n "$SHA" ] || SHA=parches-finanzas
+U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/$SHA/correos
+echo "Version: ${SHA:0:7}"
+F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php database/migrations/2026_10_19_220000_add_buzon_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_badge.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_dia.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php"
 TS=$(date +%Y%m%d%H%M)
 for f in $F; do
   mkdir -p "$(dirname "$f")"
+  curl -fsSL "$U/$f" -o "$f.nuevo" || { echo "ERROR bajando $f"; exit 1; }
+  if [[ "$f" == *.php && "$f" != *.blade.php ]]; then php -l "$f.nuevo" >/dev/null || { echo "ERROR de sintaxis en $f"; rm -f "$f.nuevo"; exit 1; }; fi
+  if [ -f "$f" ] && cmp -s "$f" "$f.nuevo"; then rm -f "$f.nuevo"; continue; fi
   [ -f "$f" ] && cp "$f" "$f.bak.$TS"
-  curl -fsSL "$U/$f?t=$TS" -o "$f.nuevo" || { echo "ERROR bajando $f"; exit 1; }
-  if [[ "$f" == *.php && "$f" != *.blade.php ]]; then php -l "$f.nuevo" >/dev/null || { echo "ERROR de sintaxis en $f"; exit 1; }; fi
   mv "$f.nuevo" "$f"
 done
 echo "Archivos OK"
 
-# Rutas: dentro del grupo auth/backoffice
 W=routes/web.php
 if ! grep -q "routes/finanzas.php" $W; then
   cp $W $W.bak.$TS
@@ -32,13 +36,10 @@ s=s[:i+len(k)]+"\n    require base_path('routes/finanzas.php'); // Finanzas: cor
 open(p,'w').write(s)
 PY
 fi
-echo "Rutas OK"
-
-# Menu lateral: antes de "F29 Estimado"
 M=resources/views/themes/backoffice/layouts/includes/left-sidebar.blade.php
 if ! grep -q "menu_finanzas" $M; then
   cp $M $M.bak.$TS
-  python3 - <<'PY' || { echo "AVISO: no pude agregar el menu (la vista igual queda en /finanzas/correos)"; }
+  python3 - <<'PY' || echo "AVISO: no pude agregar el menu (la vista igual queda en /finanzas/correos)"
 p='resources/views/themes/backoffice/layouts/includes/left-sidebar.blade.php'; s=open(p).read()
 i=s.find("backoffice.impuesto.index")
 if i<0: raise SystemExit(1)
@@ -47,9 +48,6 @@ s=s[:j]+"@include('themes.backoffice.layouts.includes.menu_finanzas')\n\n       
 open(p,'w').write(s)
 PY
 fi
-echo "Menu OK"
-
-# Lectura cada 5 minutos
 K=app/Console/Kernel.php
 if ! grep -q "finanzas:leer-correos" $K; then
   cp $K $K.bak.$TS
@@ -63,26 +61,30 @@ open(p,'w').write(s)
 PY
   php -l $K >/dev/null || { cp $K.bak.$TS $K; echo "ERROR en Kernel, restaurado"; exit 1; }
 fi
-echo "Tarea programada OK"
+echo "Rutas, menu y tarea OK"
 
-# Tabla
-php artisan migrate --path=database/migrations/2026_10_19_200000_create_fin_correos_table.php --force || exit 1
-php artisan migrate --path=database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php --force || exit 1
-php -r 'exit(function_exists("openssl_verify") && function_exists("dns_get_record") ? 0 : 1);' || echo "AVISO: falta openssl o DNS en PHP; la verificacion de firma quedara 'sin verificar'"
+# Reservas del dia: marca "en el banco"
+C=app/Http/Controllers/ReservasDelDiaController.php
+V=resources/views/themes/backoffice/pages/reporte/reservas_dia.blade.php
+if [ -f $C ] && [ -f $V ]; then
+  cp $C $C.bak.$TS; cp $V $V.bak.$TS
+  curl -fsSL "$U/instalar_reservas_dia.py" -o /tmp/instalar_reservas_dia.py && python3 /tmp/instalar_reservas_dia.py \
+    && php -l $C >/dev/null || { cp $C.bak.$TS $C; cp $V.bak.$TS $V; echo "AVISO: Reservas del dia sin cambios (restaurado)"; }
+fi
 
-# .env: quien ve Finanzas y datos del correo (la clave la pone Sebastian)
+for m in 2026_10_19_200000_create_fin_correos_table 2026_10_19_210000_add_seguridad_to_fin_correos 2026_10_19_220000_add_buzon_to_fin_correos; do
+  php artisan migrate --path=database/migrations/$m.php --force | grep -v "Nothing to migrate" || true
+done
+
 grep -q '^FIN_IMAP_USER=' .env || printf '\n# Finanzas: lectura de correos bancarios\nFIN_IMAP_USER=botacura.info@gmail.com\nFIN_IMAP_PASS=\nFIN_IMAP_FOLDER="[Gmail]/All Mail"\nFIN_IMAP_DIAS=3\n' >> .env
+grep -q '^FIN_IMAP2_USER=' .env || printf 'FIN_IMAP2_USER=swimmerw@gmail.com\nFIN_IMAP2_PASS=\n' >> .env
 if ! grep -q '^FINANZAS_USUARIOS=' .env; then
   US=$(php artisan tinker --execute="echo DB::table('users')->where(function(\$q){\$q->where('name','like','%sebasti%')->orWhere('name','like','%michelle%');})->pluck('email')->implode(',');" 2>/dev/null | tail -1)
   echo "FINANZAS_USUARIOS=$US" >> .env
 fi
+# Permisos: el servidor web (www-data) y la tarea programada deben poder escribir en storage
+sudo chown -R www-data:www-data storage bootstrap/cache 2>/dev/null; sudo chmod -R ug+rwX storage bootstrap/cache 2>/dev/null
 php artisan config:clear >/dev/null; php artisan route:clear >/dev/null; php artisan view:clear >/dev/null
 echo "----"
 echo "Ven Finanzas: $(grep '^FINANZAS_USUARIOS=' .env | cut -d= -f2)"
-php artisan route:list --name=finanzas.correos 2>/dev/null | grep -c finanzas.correos | xargs echo "Rutas finanzas.correos:"
-if grep -qE '^FIN_IMAP_PASS=.+' .env; then
-  php artisan finanzas:leer-correos --prueba --dias=7
-else
-  echo "FALTA: poner la contrasena de aplicacion de Gmail en FIN_IMAP_PASS (.env) y correr:"
-  echo "  php artisan config:clear && php artisan finanzas:leer-correos --prueba --dias=7"
-fi
+php artisan finanzas:leer-correos --prueba --dias=7
