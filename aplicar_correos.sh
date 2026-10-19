@@ -82,8 +82,6 @@ if ! grep -q '^FINANZAS_USUARIOS=' .env; then
   US=$(php artisan tinker --execute="echo DB::table('users')->where(function(\$q){\$q->where('name','like','%sebasti%')->orWhere('name','like','%michelle%');})->pluck('email')->implode(',');" 2>/dev/null | tail -1)
   echo "FINANZAS_USUARIOS=$US" >> .env
 fi
-# Permisos: el servidor web (www-data) y la tarea programada deben poder escribir en storage
-sudo chown -R www-data:www-data storage bootstrap/cache 2>/dev/null; sudo chmod -R ug+rwX storage bootstrap/cache 2>/dev/null
 php artisan config:clear >/dev/null; php artisan route:clear >/dev/null; php artisan view:clear >/dev/null
 echo "----"
 echo "Ven Finanzas: $(grep '^FINANZAS_USUARIOS=' .env | cut -d= -f2)"
