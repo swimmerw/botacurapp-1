@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  */
 class LeerCorreosBancarios extends Command
 {
-    protected $signature = 'finanzas:leer-correos {--dias=} {--prueba} {--recruzar}';
+    protected $signature = 'finanzas:leer-correos {--dias=} {--prueba} {--recruzar} {--buzon= : solo los buzones que contengan este texto} {--muestra : (prueba) muestra remitente, asunto y el inicio del texto de cada correo}';
     protected $description = 'Lee avisos de transferencias, cartolas y cuentas desde el correo y los cruza con reservas';
 
     public function handle(ConciliadorAbonos $conc)
@@ -33,6 +33,9 @@ class LeerCorreosBancarios extends Command
         $dias = (int) ($this->option('dias') ?: $cfg['dias']);
         $error = 0;
         foreach ($cfg['buzones'] as $b) {
+            if ($this->option('buzon') && stripos($b['usuario'], $this->option('buzon')) === false) {
+                continue;
+            }
             if (empty($b['clave'])) {
                 $this->warn("{$b['usuario']}: falta su contraseña de aplicación en el .env; no se lee.");
                 continue;
@@ -50,8 +53,9 @@ class LeerCorreosBancarios extends Command
 
     private function leerBuzon(array $b, array $cfg, int $dias, ConciliadorAbonos $conc): void
     {
-        $prueba = (bool) $this->option('prueba');
-        $nuevos = ['abono' => 0, 'pago' => 0, 'traspaso' => 0, 'cuenta' => 0, 'cartola' => 0, 'factura' => 0];
+        $muestra = (bool) $this->option('muestra');
+        $prueba = (bool) $this->option('prueba') || $muestra;
+        $nuevos = ['abono' => 0, 'pago' => 0, 'traspaso' => 0, 'retiro' => 0, 'cuenta' => 0, 'cartola' => 0, 'factura' => 0];
         $hayBuzon = \Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'buzon');
 
         $imap = new ImapCliente($cfg['host'], $cfg['port']);
@@ -99,6 +103,14 @@ class LeerCorreosBancarios extends Command
                     $this->line(sprintf('%-8s %-7s %s %s %-30s %12s %s', $d['tipo'], $seg['seguridad'], $d['fecha'], $d['hora'],
                         mb_substr($d['nombre'] ?: ($d['proveedor'] ?: $d['banco']), 0, 30),
                         $d['monto'] ? '$' . number_format($d['monto'], 0, ',', '.') : '-', $d['operacion']));
+                    if ($muestra) {
+                        $this->line('         de: ' . $de . ' | asunto: ' . $asunto);
+                        if ($seg['seguridad'] !== 'seguro') {
+                            $this->line('         seguridad: ' . $seg['detalle']);
+                        }
+                        $this->line('         texto: ' . mb_substr(Lector::plano($texto), 0, 420));
+                        $this->line('');
+                    }
                     continue;
                 }
                 $id = DB::table('fin_correos')->insertGetId($base + [

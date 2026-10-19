@@ -9,6 +9,7 @@ namespace App\Finanzas\Correo;
  *  - abono   : transferencia recibida por Botacura (aviso del banco de quien paga)
  *  - pago    : transferencia hecha por Botacura (aviso de su propio banco)
  *  - traspaso: transferencia entre cuentas de Botacura
+ *  - retiro  : transferencia de Botacura a la cuenta de un socio (Sebastián o Michelle)
  *  - cuenta  : cuenta o boleta por pagar / vencida (Movistar, API Gateway, luz, agua…)
  *  - cartola : cartola diaria o mensual enviada por el banco
  *  - factura : factura electrónica recibida por correo (el SII ya la importa)
@@ -118,6 +119,8 @@ class Lector
             }
             if ($d['tipo'] === 'pago' && $d['nombre'] && preg_match('/botacura/i', $d['nombre'])) {
                 $d['tipo'] = 'traspaso'; // entre cuentas de Botacura
+            } elseif ($d['tipo'] === 'pago' && $d['nombre'] && preg_match('/(sebasti[aá]n\s+wimmer|michelle\s+(alejandra\s+)?silva)/iu', $d['nombre'])) {
+                $d['tipo'] = 'retiro'; // de Botacura a la cuenta de un socio
             }
             $d['monto'] = self::monto(self::primero($t, [
                 '/Monto (?:transferido|recibido|transferencia|de la transferencia|Operaci[óo]n)[^$\d]{0,30}\$\s?([\d\.]+)/iu',
@@ -177,9 +180,24 @@ class Lector
             $d['hora'] = $d['hora'] ?: date('H:i', $ts);
         }
         if ($d['nombre']) {
-            $d['nombre'] = trim(preg_replace('/\s+/', ' ', $d['nombre']), " .,|");
+            $d['nombre'] = trim(preg_replace('/\s+/', ' ', self::reparar($d['nombre'])), " .,|");
+        }
+        if ($d['comentario']) {
+            $d['comentario'] = self::reparar($d['comentario']);
         }
         return $d;
+    }
+
+    /** Corrige textos codificados dos veces ("GuzmÃ¡n" -> "Guzmán"). */
+    public static function reparar(string $s): string
+    {
+        if (preg_match('/Ã[\x{0080}-\x{00BF}]|Ã[¡©­³º±]/u', $s)) {
+            $r = @mb_convert_encoding($s, 'ISO-8859-1', 'UTF-8');
+            if ($r !== false && mb_check_encoding($r, 'UTF-8')) {
+                return $r;
+            }
+        }
+        return $s;
     }
 
     public static function plano(string $s): string
