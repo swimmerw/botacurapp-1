@@ -15,13 +15,52 @@ namespace App\Finanzas\Correo;
  */
 class Lector
 {
+    /** Dominios oficiales desde los que cada banco o billetera envía sus avisos (también se exige firma DKIM de ese dominio). */
     const BANCOS = [
-        'bancoestado' => 'BancoEstado', 'bancochile' => 'Banco de Chile', 'santander' => 'Santander',
-        'bancofalabella' => 'Banco Falabella', 'scotiabank' => 'Scotiabank', 'bci.cl' => 'Bci',
-        'itau' => 'Itaú', 'security' => 'Banco Security', 'bice' => 'Bice', 'mercadopago' => 'Mercado Pago',
-        'tenpo' => 'Tenpo', 'coopeuch' => 'Coopeuch', 'ripley' => 'Banco Ripley', 'machbank' => 'Mach',
-        'consorcio' => 'Banco Consorcio', 'bancointernacional' => 'Banco Internacional',
+        'BancoEstado'         => ['bancoestado.cl', 'correobancoestado.cl'],
+        'Banco de Chile'      => ['bancochile.cl', 'bancochile.com', 'bancoedwards.cl'],
+        'Santander'           => ['santander.cl'],
+        'Banco Falabella'     => ['bancofalabella.com', 'bancofalabella.cl'],
+        'Scotiabank'          => ['scotiabank.cl'],
+        'Bci'                 => ['bci.cl'],
+        'Mach'                => ['machbank.cl', 'mach.cl', 'somosmach.com'],
+        'Itaú'                => ['itau.cl'],
+        'Banco Security'      => ['bancosecurity.cl', 'security.cl'],
+        'Bice'                => ['bice.cl'],
+        'Banco Ripley'        => ['bancoripley.cl'],
+        'Banco Consorcio'     => ['bancoconsorcio.cl'],
+        'Banco Internacional' => ['bancointernacional.cl'],
+        'HSBC'                => ['hsbc.cl'],
+        'Coopeuch'            => ['coopeuch.cl'],
+        'Mercado Pago'        => ['mercadopago.cl', 'mercadopago.com', 'mercadolibre.cl', 'mercadolibre.com'],
+        'Tenpo'               => ['tenpo.cl'],
+        'Tapp'                => ['tapp.cl'],
+        'Global66'            => ['global66.com'],
+        'Superdigital'        => ['superdigital.cl'],
+        'Prex'                => ['prexcard.cl', 'prex.cl'],
+        'Chek'                => ['chek.cl'],
+        'Los Héroes'          => ['losheroes.cl'],
+        'La Araucana'         => ['laaraucana.cl'],
     ];
+
+    /** Banco al que pertenece un dominio (exacto o subdominio), o null. */
+    public static function bancoDeDominio(string $dominio): ?string
+    {
+        $dominio = strtolower(trim($dominio, '. '));
+        foreach (self::BANCOS as $banco => $doms) {
+            foreach ($doms as $d) {
+                if ($dominio === $d || substr($dominio, -strlen('.' . $d)) === '.' . $d) {
+                    return $banco;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static function dominio(string $correo): string
+    {
+        return strtolower(substr(strrchr($correo, '@') ?: '', 1));
+    }
 
     const PROVEEDORES = [
         'movistar' => 'Movistar', 'entel' => 'Entel', 'vtr' => 'VTR', 'enel' => 'Enel', 'cge' => 'CGE',
@@ -38,7 +77,7 @@ class Lector
         $a = self::plano($asunto);
         $t = self::plano($texto);
         $todo = $a . ' | ' . $t;
-        $banco = self::nombreDe($r, self::BANCOS);
+        $banco = self::bancoDeDominio(self::dominio($r));
 
         $d = ['tipo' => null, 'banco' => $banco, 'proveedor' => null, 'nombre' => null, 'rut' => null,
               'monto' => null, 'fecha' => null, 'hora' => null, 'operacion' => null, 'comentario' => null,
@@ -60,7 +99,7 @@ class Lector
                     '/Nombre Empresa\s*\|?\s*([^|]+?)\s*\|?\s*Rut/i',
                     '/Estimado\(a\) Sr\(a\)\.?\s*(.+?)\s*CENTRO RECREATIVO/i',
                 ]);
-            } elseif (preg_match('/(transferencia|traspaso|has recibido|ha recibido|recibiste)/i', $todo)) {
+            } elseif (preg_match('/(transferencia|traspaso|has recibido|ha recibido|recibiste|te envi[óo]|te enviaron|te transfiri[óo])/iu', $todo)) {
                 $d['tipo'] = 'abono';
                 $d['nombre'] = self::primero($t, [
                     '/nuestro\(a\) cliente\s+(.+?),?\s+(con los siguientes|ha efectuado|ha instruido)/i',
@@ -68,6 +107,8 @@ class Lector
                     '/transferencia de fondos de\s+(.+?)\s+hacia tu cuenta/i',
                     '/Titular cuenta origen\s*\|.*?\|\s*[\d\.]+-[\dkK]\s*\|\s*([^|]+?)\s*\|/i',
                     '/(?:de|desde)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{5,60}?)\s+(?:a tu cuenta|a su cuenta)/u',
+                    '/([\p{Lu}][\p{L}]+(?: [\p{Lu}][\p{L}]+){1,4}) te (?:envi[óo]|transfiri[óo]|deposit[óo])/u',
+                    '/(?:Recibiste|recibiste) (?:dinero|una transferencia|un pago)? ?de ([\p{L} ]{4,60}?)(?:\s*\||\.|,| por| el)/u',
                 ]);
             } else {
                 return $d;
@@ -75,6 +116,7 @@ class Lector
             $d['monto'] = self::monto(self::primero($t, [
                 '/Monto (?:transferido|recibido|transferencia|de la transferencia)[^$\d]{0,30}\$\s?([\d\.]+)/i',
                 '/Monto\s*\|?\s*:?\s*\|?\s*\$\s?([\d\.]+)/i',
+                '/(?:Recibiste|te envi[óo]|te transfiri[óo])[^$]{0,60}\$\s?([\d\.]+)/i',
                 '/\$\s?([\d]{1,3}(?:\.\d{3})+|\d{4,})/',
             ]));
             $d['operacion'] = self::primero($t, [

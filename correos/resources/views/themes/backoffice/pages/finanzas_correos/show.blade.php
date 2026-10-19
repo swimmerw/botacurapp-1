@@ -18,6 +18,11 @@
                     <tr><td class="grey-text">Fecha</td><td>{{ $c->fecha }} {{ $c->hora }}</td></tr>
                     <tr><td class="grey-text">{{ $c->tipo === 'pago' ? 'Para' : 'De' }}</td><td>{{ $c->nombre ?: $c->proveedor }} {{ $c->rut }}</td></tr>
                     <tr><td class="grey-text">Banco</td><td>{{ $c->banco }}</td></tr>
+                    <tr><td class="grey-text">Autenticidad</td><td>
+                        @if($c->seguridad === 'seguro')<span class="green-text"><i class="material-icons tiny">verified_user</i> Verificado</span>
+                        @elseif($c->seguridad === 'falso')<span class="red-text"><i class="material-icons tiny">gpp_bad</i> Falso o alterado</span>
+                        @else<span class="orange-text"><i class="material-icons tiny">help</i> Sin verificar</span>@endif
+                        <br><small class="grey-text">{{ $c->seguridad_detalle }}</small></td></tr>
                     <tr><td class="grey-text">Cuenta</td><td>{{ $c->cuenta }} {{ config('finanzas.cuentas.' . $c->cuenta) }}</td></tr>
                     <tr><td class="grey-text">N° operación</td><td>{{ $c->operacion }}</td></tr>
                     <tr><td class="grey-text">Comentario</td><td>{{ $c->comentario }}</td></tr>

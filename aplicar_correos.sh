@@ -3,11 +3,12 @@
 #  - Abonos recibidos (avisos de BancoEstado, Banco de Chile, Santander, Falabella, Scotiabank, Bci...)
 #    y su cruce con reservas, abonos extra y comprobantes del bot en revision.
 #  - Pagos hechos por Botacura, cuentas por pagar (Movistar, API Gateway...), cartolas y facturas.
+#  - Cada correo se verifica con la firma DKIM del banco (dominio oficial): solo los verificados se cruzan solos.
 #  - Vista Finanzas > Correos bancarios (solo FINANZAS_USUARIOS) y lectura cada 5 minutos.
 # No cambia estados de ventas ni reservas: solo lee, guarda y marca.
 cd /var/www/html/botacurapp || exit 1
 U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/parches-finanzas/correos
-F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php"
+F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php"
 TS=$(date +%Y%m%d%H%M)
 for f in $F; do
   mkdir -p "$(dirname "$f")"
@@ -66,6 +67,8 @@ echo "Tarea programada OK"
 
 # Tabla
 php artisan migrate --path=database/migrations/2026_10_19_200000_create_fin_correos_table.php --force || exit 1
+php artisan migrate --path=database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php --force || exit 1
+php -r 'exit(function_exists("openssl_verify") && function_exists("dns_get_record") ? 0 : 1);' || echo "AVISO: falta openssl o DNS en PHP; la verificacion de firma quedara 'sin verificar'"
 
 # .env: quien ve Finanzas y datos del correo (la clave la pone Sebastian)
 grep -q '^FIN_IMAP_USER=' .env || printf '\n# Finanzas: lectura de correos bancarios\nFIN_IMAP_USER=botacura.info@gmail.com\nFIN_IMAP_PASS=\nFIN_IMAP_FOLDER="[Gmail]/All Mail"\nFIN_IMAP_DIAS=3\n' >> .env

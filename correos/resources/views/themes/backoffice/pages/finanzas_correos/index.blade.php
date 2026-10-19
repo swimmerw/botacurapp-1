@@ -8,8 +8,9 @@
 
 @php
     $tipos = ['abono' => 'Abonos recibidos', 'pago' => 'Pagos hechos', 'cuenta' => 'Cuentas por pagar', 'cartola' => 'Cartolas', 'factura' => 'Facturas'];
-    $estados = ['todos' => 'Todos', 'calzado' => 'Calzados', 'revisar' => 'Por revisar', 'nuevo' => 'Nuevos', 'pagado' => 'Pagados', 'ignorado' => 'Ignorados'];
-    $color = ['calzado' => 'green', 'revisar' => 'orange', 'nuevo' => 'blue', 'pagado' => 'teal', 'ignorado' => 'grey'];
+    $estados = ['todos' => 'Todos', 'calzado' => 'Calzados', 'revisar' => 'Por revisar', 'nuevo' => 'Nuevos', 'pagado' => 'Pagados', 'ignorado' => 'Ignorados', 'sospechoso' => 'Sospechosos'];
+    $color = ['calzado' => 'green', 'revisar' => 'orange', 'nuevo' => 'blue', 'pagado' => 'teal', 'ignorado' => 'grey', 'sospechoso' => 'red'];
+    $escudo = ['seguro' => ['verified_user', 'green-text', 'Verificado: firma del banco'], 'revisar' => ['help', 'orange-text', 'Sin verificar'], 'falso' => ['gpp_bad', 'red-text', 'Falso o alterado']];
     $peso = function ($n) { return $n === null ? '–' : '$' . number_format($n, 0, ',', '.'); };
 @endphp
 
@@ -70,7 +71,7 @@
             <tr>
                 <td style="white-space:nowrap">{{ $f->fecha ? \Carbon\Carbon::parse($f->fecha)->format('d-m') : '' }} <span class="grey-text">{{ $f->hora }}</span></td>
                 <td>{{ $f->nombre ?: $f->proveedor }}</td>
-                <td>{{ $f->banco }}</td>
+                <td style="white-space:nowrap">@php($e = $escudo[$f->seguridad] ?? null)@if($e)<i class="material-icons tiny {{ $e[1] }}" title="{{ $e[2] }}: {{ $f->seguridad_detalle }}">{{ $e[0] }}</i>@endif {{ $f->banco }}</td>
                 <td class="right-align" style="white-space:nowrap">{{ $peso($f->monto) }}</td>
                 <td class="grey-text" style="max-width:260px">{{ $f->comentario }}@if($f->vencimiento) · vence {{ \Carbon\Carbon::parse($f->vencimiento)->format('d-m') }}@endif
                     @if($f->nota)<br><small>{{ $f->nota }}</small>@endif</td>

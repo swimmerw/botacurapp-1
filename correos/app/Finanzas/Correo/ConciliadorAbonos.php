@@ -38,6 +38,10 @@ class ConciliadorAbonos
         $res = ['venta_id' => $mejor['venta_id'] ?? null, 'campo' => $mejor['campo'] ?? null,
                 'abono_extra_id' => $mejor['abono_extra_id'] ?? null, 'comprobante_id' => $mejor['comprobante_id'] ?? null];
         if ($mejor['puntos'] >= 2 && !$empate) {
+            // Solo un aviso verificado como auténtico (firma del banco) se calza solo
+            if (($correo->seguridad ?? 'seguro') !== 'seguro') {
+                return $res + ['estado' => 'revisar', 'nota' => 'Calza, pero el correo no pasó la verificación del banco: ' . $mejor['motivo']];
+            }
             return $res + ['estado' => 'calzado', 'nota' => $mejor['motivo']];
         }
         if (count($cands) === 1) {

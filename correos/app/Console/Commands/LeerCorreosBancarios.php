@@ -6,6 +6,7 @@ use App\Finanzas\Correo\ConciliadorAbonos;
 use App\Finanzas\Correo\ImapCliente;
 use App\Finanzas\Correo\Lector;
 use App\Finanzas\Correo\Mime;
+use App\Finanzas\Correo\Seguridad;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -69,8 +70,9 @@ class LeerCorreosBancarios extends Command
                     continue;
                 }
                 $nuevos[$d['tipo']]++;
+                $seg = Seguridad::evaluar($de, $completo);
                 if ($prueba) {
-                    $this->line(sprintf('%-7s %s %s %-28s %12s %s', $d['tipo'], $d['fecha'], $d['hora'],
+                    $this->line(sprintf('%-7s %-7s %s %s %-28s %12s %s', $d['tipo'], $seg['seguridad'], $d['fecha'], $d['hora'],
                         mb_substr($d['nombre'] ?: ($d['proveedor'] ?: $d['banco']), 0, 28),
                         $d['monto'] ? '$' . number_format($d['monto'], 0, ',', '.') : '-', $d['operacion']));
                     continue;
@@ -85,11 +87,13 @@ class LeerCorreosBancarios extends Command
                     'operacion' => $d['operacion'] ? mb_substr($d['operacion'], 0, 60) : null,
                     'comentario' => $d['comentario'] ? mb_substr($d['comentario'], 0, 191) : null,
                     'cuenta' => $d['cuenta'], 'vencimiento' => $d['vencimiento'],
-                    'estado' => in_array($d['tipo'], ['cartola', 'factura'], true) ? 'ignorado' : 'nuevo',
+                    'estado' => $seg['seguridad'] === 'falso' ? 'sospechoso'
+                        : (in_array($d['tipo'], ['cartola', 'factura'], true) ? 'ignorado' : 'nuevo'),
+                    'seguridad' => $seg['seguridad'], 'seguridad_detalle' => mb_substr($seg['detalle'], 0, 191),
                     'texto' => mb_substr($texto, 0, 8000),
                     'created_at' => now(), 'updated_at' => now(),
                 ]);
-                if ($d['tipo'] === 'abono') {
+                if ($d['tipo'] === 'abono' && $seg['seguridad'] !== 'falso') {
                     $c = DB::table('fin_correos')->where('id', $id)->first();
                     $conc->aplicar($c, $conc->conciliar($c));
                 }
@@ -103,7 +107,10 @@ class LeerCorreosBancarios extends Command
 
     private function interesa(string $de, string $asunto): bool
     {
-        foreach (array_merge(array_keys(Lector::BANCOS), array_keys(Lector::PROVEEDORES)) as $k) {
+        if (Lector::bancoDeDominio(Lector::dominio($de))) {
+            return true;
+        }
+        foreach (array_keys(Lector::PROVEEDORES) as $k) {
             if (strpos($de, $k) !== false) {
                 return true;
             }
