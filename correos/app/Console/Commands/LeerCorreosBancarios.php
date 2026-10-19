@@ -42,10 +42,10 @@ class LeerCorreosBancarios extends Command
         $imap = new ImapCliente($cfg['host'], $cfg['port']);
         try {
             $imap->login($cfg['usuario'], $cfg['clave']);
-            $imap->seleccionar($cfg['carpeta']);
+            $carpeta = $imap->seleccionar($cfg['carpeta']);
             $uids = $imap->uidsDesde(new \DateTime("-{$dias} days"));
             $cabs = $uids ? $imap->cabeceras($uids) : [];
-            $this->line(count($uids) . " correos en {$dias} días; revisando los que pueden traer plata…");
+            $this->line(count($uids) . " correos en {$dias} días en \"{$carpeta}\"; revisando los que pueden traer plata…");
 
             foreach ($cabs as $uid => $raw) {
                 $h = Mime::cabeceras(str_replace("\n", "\r\n", str_replace("\r\n", "\n", $raw)) . "\r\n\r\n");

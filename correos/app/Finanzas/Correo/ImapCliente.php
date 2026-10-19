@@ -73,9 +73,33 @@ class ImapCliente
         $this->cmd('LOGIN ' . $this->q($usuario) . ' ' . $this->q($clave));
     }
 
-    public function seleccionar(string $carpeta): void
+    /**
+     * Abre la carpeta en solo lectura. Si no existe (Gmail en español la llama "[Gmail]/Todos"),
+     * usa la carpeta marcada como \All ("Todos los correos") y si no, INBOX.
+     * Devuelve el nombre de la carpeta abierta.
+     */
+    public function seleccionar(string $carpeta): string
     {
-        $this->cmd('EXAMINE ' . $this->q($carpeta)); // solo lectura
+        try {
+            $this->cmd('EXAMINE ' . $this->q($carpeta));
+            return $carpeta;
+        } catch (\RuntimeException $e) {
+            $todos = $this->carpetaTodos();
+            $alt = $todos ?: 'INBOX';
+            $this->cmd('EXAMINE ' . $this->q($alt));
+            return $alt;
+        }
+    }
+
+    /** Carpeta con el atributo \All (todos los correos, incluidos los archivados), o null. */
+    public function carpetaTodos(): ?string
+    {
+        foreach ($this->cmd('LIST "" "*"') as $r) {
+            if (stripos($r['linea'], '\\All') !== false && preg_match('/"([^"]+)"\s*$/', trim($r['linea']), $m)) {
+                return $m[1];
+            }
+        }
+        return null;
     }
 
     /** UIDs de los correos recibidos desde una fecha. */
