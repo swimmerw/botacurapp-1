@@ -37,7 +37,7 @@ class LeerCorreosBancarios extends Command
         }
         $dias = (int) ($this->option('dias') ?: $cfg['dias']);
         $prueba = (bool) $this->option('prueba');
-        $nuevos = ['abono' => 0, 'pago' => 0, 'cuenta' => 0, 'cartola' => 0, 'factura' => 0];
+        $nuevos = ['abono' => 0, 'pago' => 0, 'traspaso' => 0, 'cuenta' => 0, 'cartola' => 0, 'factura' => 0];
 
         $imap = new ImapCliente($cfg['host'], $cfg['port']);
         try {

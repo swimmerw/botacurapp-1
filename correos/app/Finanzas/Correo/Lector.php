@@ -8,6 +8,7 @@ namespace App\Finanzas\Correo;
  * tipo:
  *  - abono   : transferencia recibida por Botacura (aviso del banco de quien paga)
  *  - pago    : transferencia hecha por Botacura (aviso de su propio banco)
+ *  - traspaso: transferencia entre cuentas de Botacura
  *  - cuenta  : cuenta o boleta por pagar / vencida (Movistar, API Gateway, luz, agua…)
  *  - cartola : cartola diaria o mensual enviada por el banco
  *  - factura : factura electrónica recibida por correo (el SII ya la importa)
@@ -89,12 +90,13 @@ class Lector
         }
 
         if ($banco) {
-            $esPropio = preg_match('/(hemos realizado una transferencia instruida por nuestro cliente|ha instruido una transferencia de fondos datos de destino|has realizado una transferencia|transferencia enviada|comprobante de pago)/i', $t)
+            $esPropio = preg_match('/(hemos realizado una transferencia instruida por nuestro cliente|botacura[\w. ]*?\W+ha instruido una transferencia|has realizado una transferencia|transferencia enviada|comprobante de pago)/i', $t)
                 && preg_match('/centro recreativo botacura/i', $t)
                 && !preg_match('/(has recibido|ha recibido|a tu cuenta|a su cuenta|hacia su cuenta|hacia tu cuenta)/i', $t);
             if ($esPropio) {
                 $d['tipo'] = 'pago';
                 $d['nombre'] = self::primero($t, [
+                    '/Nombre del Beneficiario\s*\|?\s*([^|]+?)\s*\|/i',
                     '/Nombre del Beneficiario\s*\|?\s*([^|]+?)\s*(\||Rut|RUT)/i',
                     '/Nombre Empresa\s*\|?\s*([^|]+?)\s*\|?\s*Rut/i',
                     '/Estimado\(a\) Sr\(a\)\.?\s*(.+?)\s*CENTRO RECREATIVO/i',
@@ -102,7 +104,8 @@ class Lector
             } elseif (preg_match('/(transferencia|traspaso|has recibido|ha recibido|recibiste|te envi[óo]|te enviaron|te transfiri[óo])/iu', $todo)) {
                 $d['tipo'] = 'abono';
                 $d['nombre'] = self::primero($t, [
-                    '/nuestro\(a\) cliente\s+(.+?),?\s+(con los siguientes|ha efectuado|ha instruido)/i',
+                    '/nuestro\(a\) cliente\s+(.+?),?\s+(con los siguientes|ha efectuado|ha instruido|realiz)/i',
+                    '/nuestro cliente\s+(.+?)\s+realiz[óo] una transferencia/iu',
                     '/nuestro cliente\s+(?:el\s+)?(?:Sr\(a\)\s+)?(.+?),?\s+(le informamos|ha instruido|ha realizado)/i',
                     '/transferencia de fondos de\s+(.+?)\s+hacia tu cuenta/i',
                     '/Titular cuenta origen\s*\|.*?\|\s*[\d\.]+-[\dkK]\s*\|\s*([^|]+?)\s*\|/i',
@@ -113,23 +116,28 @@ class Lector
             } else {
                 return $d;
             }
+            if ($d['tipo'] === 'pago' && $d['nombre'] && preg_match('/botacura/i', $d['nombre'])) {
+                $d['tipo'] = 'traspaso'; // entre cuentas de Botacura
+            }
             $d['monto'] = self::monto(self::primero($t, [
-                '/Monto (?:transferido|recibido|transferencia|de la transferencia)[^$\d]{0,30}\$\s?([\d\.]+)/i',
+                '/Monto (?:transferido|recibido|transferencia|de la transferencia|Operaci[óo]n)[^$\d]{0,30}\$\s?([\d\.]+)/iu',
                 '/Monto\s*\|?\s*:?\s*\|?\s*\$\s?([\d\.]+)/i',
                 '/(?:Recibiste|te envi[óo]|te transfiri[óo])[^$]{0,60}\$\s?([\d\.]+)/i',
                 '/\$\s?([\d]{1,3}(?:\.\d{3})+|\d{4,})/',
             ]));
             $d['operacion'] = self::primero($t, [
+                '/ID de la operaci[óo]n\s*\|?\s*([A-Z0-9_]{6,})/iu',
                 '/N[úu]mero de (?:Operaci[óo]n|la operacion|operacion|comprobante)\s*\|?\s*:?\s*\|?\s*([A-Z0-9]*\d[A-Z0-9]{3,})/i',
                 '/\|\s*BANCO [^|]+\|\s*(\d{10,})\s*\|/i',
                 '/N[°º]?\s*de operaci[óo]n\s*:?\s*([A-Z0-9]{5,})/i',
             ]);
             $d['rut'] = self::primero($t, ['/(?:Rut cuenta origen|RUT origen)[^\d]{0,40}(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])/i']);
             $d['comentario'] = self::primero($t, [
-                '/(?:Comentario(?: para el destinatario)?|Mensaje|Asunto)\s*\|?\s*:?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|Inf[óo]rmese|N[úu]mero|$)/i',
+                '/(?:Comentario(?: para el destinatario)?|Mensaje)\s*[|:]\s*\|?\s*:?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|Inf[óo]rmese|N[úu]mero|$)/i',
+                '/Asunto\s*\|?\s*:?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|Inf[óo]rmese|N[úu]mero|$)/i',
             ]);
             $d['cuenta'] = self::primero($t, [
-                '/(?:N de cuenta|Cuenta de destino|Cuenta destino|cuenta N°|nro\.)\s*\|?\s*:?\s*(?:Cuenta Vista|Cuenta Corriente)?\s*([\d\-]{8,})/i',
+                '/(?:N[º°]? de cuenta|N[úu]mero de Cuenta Corriente|Cuenta de destino|Cuenta destino|cuenta N°|nro\.)\s*\|?\s*:?\s*(?:Cuenta Vista|Cuenta Corriente)?\s*([\d\-]{8,})/i',
             ]);
             if ($d['cuenta']) {
                 $d['cuenta'] = ltrim(preg_replace('/\D/', '', $d['cuenta']), '0');
@@ -224,7 +232,7 @@ class Lector
     private static function fechaHora(string $t): array
     {
         $f = self::fecha(self::primero($t, [
-            '/(?:hoy,?|Fecha(?: de la transferencia| de Pago)?:?|con fecha(?: de hoy)?:?)\s*\|?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i',
+            '/(?:hoy,?|Fecha(?: y Hora de la Operaci[óo]n| de la transferencia| de Pago)?:?|con fecha(?: de hoy)?:?)\s*\|?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i',
             '/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/',
         ]));
         $h = self::primero($t, ['/\d{4}\s*(?:-\s*)?(\d{1,2}:\d{2})/', '/Hora\s*\|?\s*:?\s*(\d{1,2}:\d{2})/i', '/(\d{1,2}:\d{2})\s*(?:hrs|horas)?/i']);

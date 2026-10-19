@@ -53,7 +53,9 @@ class Mime
         foreach (['text/plain', 'text/html'] as $tipo) {
             foreach ($partes as $p) {
                 if ($p['tipo'] === $tipo && trim($p['cuerpo']) !== '') {
-                    return $tipo === 'text/html' ? self::htmlATexto($p['cuerpo']) : $p['cuerpo'];
+                    // Algunos bancos mandan HTML dentro de la parte "texto plano"
+                    $esHtml = $tipo === 'text/html' || preg_match('/<(td|tr|table|div|p|br)\b/i', $p['cuerpo']);
+                    return $esHtml ? self::htmlATexto($p['cuerpo']) : $p['cuerpo'];
                 }
             }
         }

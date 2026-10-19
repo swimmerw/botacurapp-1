@@ -7,7 +7,7 @@
 @endsection
 
 @php
-    $tipos = ['abono' => 'Abonos recibidos', 'pago' => 'Pagos hechos', 'cuenta' => 'Cuentas por pagar', 'cartola' => 'Cartolas', 'factura' => 'Facturas'];
+    $tipos = ['abono' => 'Abonos recibidos', 'pago' => 'Pagos hechos', 'traspaso' => 'Traspasos entre cuentas', 'cuenta' => 'Cuentas por pagar', 'cartola' => 'Cartolas', 'factura' => 'Facturas'];
     $estados = ['todos' => 'Todos', 'calzado' => 'Calzados', 'revisar' => 'Por revisar', 'nuevo' => 'Nuevos', 'pagado' => 'Pagados', 'ignorado' => 'Ignorados', 'sospechoso' => 'Sospechosos'];
     $color = ['calzado' => 'green', 'revisar' => 'orange', 'nuevo' => 'blue', 'pagado' => 'teal', 'ignorado' => 'grey', 'sospechoso' => 'red'];
     $escudo = ['seguro' => ['verified_user', 'green-text', 'Verificado: firma del banco'], 'revisar' => ['help', 'orange-text', 'Sin verificar'], 'falso' => ['gpp_bad', 'red-text', 'Falso o alterado']];
