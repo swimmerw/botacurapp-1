@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  */
 class FinanzasF29Deudas extends Command
 {
-    protected $signature = 'finanzas:f29-deudas {--desde=} {--pagados=} {--aplicar}';
+    protected $signature = 'finanzas:f29-deudas {--desde=} {--pagados=} {--solo= : solo estos meses, ej. 2026-01,2026-06} {--aplicar}';
     protected $description = 'Lleva cada F29 (IVA + retenciones + PPM) a Por pagar';
 
     const TASA_PPM = 0.00125;
@@ -32,6 +32,7 @@ class FinanzasF29Deudas extends Command
         $desde = str_replace('-', '', $this->option('desde') ?: config('finanzas.f29_desde', '2026-08'));
         $pagados = array_filter(array_map(function ($p) { return str_replace('-', '', trim($p)); }, explode(',', (string) $this->option('pagados'))));
         $aplicar = (bool) $this->option('aplicar');
+        $solo = array_filter(array_map(function ($p) { return str_replace('-', '', trim($p)); }, explode(',', (string) $this->option('solo'))));
         $f29 = app(\App\Services\F29Service::class);
         $hasta = now()->subMonthNoOverflow()->format('Ym'); // el mes en curso aún no se declara
         $cat = DB::table('categorias_compras')->where('nombre', 'Impuestos y obligaciones')->value('id');
@@ -41,6 +42,9 @@ class FinanzasF29Deudas extends Command
         $filas = DB::table('sii_resumen_mensual')->where('periodo', '<=', $hasta)->orderBy('periodo')->get();
         foreach ($filas as $r) {
             $p = $r->periodo;
+            if ($solo && !in_array($p, $solo, true)) {
+                continue;
+            }
             $mes = Carbon::createFromFormat('Ym d', $p . ' 01');
             $nombreMes = $mes->copy()->locale('es')->isoFormat('MMMM YYYY');
             $iva = $f29->ivaPeriodo($p);
@@ -59,7 +63,7 @@ class FinanzasF29Deudas extends Command
                 number_format($ivaPagar, 0, ',', '.'), number_format($ret, 0, ',', '.'), number_format($ppm, 0, ',', '.'),
                 '$' . number_format($total, 0, ',', '.'), date('d-m-Y', strtotime($vence)), $estado);
 
-            if ($p < $desde && !in_array($p, $pagados, true)) {
+            if ($p < $desde && !in_array($p, $pagados, true) && !in_array($p, $solo, true)) {
                 $this->line($linea . ' · (antes de ' . substr($desde, 4) . '-' . substr($desde, 0, 4) . ': no se toca)');
                 continue;
             }
