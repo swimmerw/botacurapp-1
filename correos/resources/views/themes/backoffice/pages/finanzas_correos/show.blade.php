@@ -16,7 +16,7 @@
                 <span class="card-title">{{ ucfirst($c->tipo) }} · {{ $c->monto ? '$' . number_format($c->monto, 0, ',', '.') : 'sin monto' }}</span>
                 <table style="font-size:.9rem">
                     <tr><td class="grey-text">Fecha</td><td>{{ $c->fecha }} {{ $c->hora }}</td></tr>
-                    <tr><td class="grey-text">{{ $c->tipo === 'pago' ? 'Para' : 'De' }}</td><td>{{ $c->nombre ?: $c->proveedor }} {{ $c->rut }}</td></tr>
+                    <tr><td class="grey-text">{{ in_array($c->tipo, ['pago', 'personal', 'compra', 'ajeno', 'retiro', 'traspaso']) ? 'Para' : 'De' }}</td><td>{{ $c->nombre ?: $c->proveedor }} {{ $c->rut }}</td></tr>
                     <tr><td class="grey-text">Banco</td><td>{{ $c->banco }}</td></tr>
                     <tr><td class="grey-text">Autenticidad</td><td>
                         @if($c->seguridad === 'seguro')<span class="green-text"><i class="material-icons tiny">verified_user</i> Verificado</span>

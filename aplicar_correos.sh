@@ -82,7 +82,13 @@ if ! grep -q '^FINANZAS_USUARIOS=' .env; then
   US=$(php artisan tinker --execute="echo DB::table('users')->where(function(\$q){\$q->where('name','like','%sebasti%')->orWhere('name','like','%michelle%');})->pluck('email')->implode(',');" 2>/dev/null | tail -1)
   echo "FINANZAS_USUARIOS=$US" >> .env
 fi
+if ! grep -q '^FINANZAS_PERSONAL=' .env; then
+  YO=$(php artisan tinker --execute="echo DB::table('users')->where('name','like','%sebasti%')->pluck('email')->implode(',');" 2>/dev/null | tail -1)
+  echo "FINANZAS_PERSONAL=$YO" >> .env
+fi
 php artisan config:clear >/dev/null; php artisan route:clear >/dev/null; php artisan view:clear >/dev/null
 echo "----"
 echo "Ven Finanzas: $(grep '^FINANZAS_USUARIOS=' .env | cut -d= -f2)"
+echo "Gastos personales los ve: $(grep '^FINANZAS_PERSONAL=' .env | cut -d= -f2)"
+php artisan finanzas:leer-correos --releer
 php artisan finanzas:leer-correos --prueba --dias=7

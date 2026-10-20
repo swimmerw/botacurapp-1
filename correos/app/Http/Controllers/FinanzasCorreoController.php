@@ -35,9 +35,20 @@ class FinanzasCorreoController extends Controller
         return $u->has_role(config('app.admin_role'));
     }
 
+    const PERSONALES = ['personal', 'ajeno'];
+
+    /** Los gastos personales los ve solo Sebastián (FINANZAS_PERSONAL; por defecto el primero de FINANZAS_USUARIOS). */
+    public static function puedeVerPersonal(): bool
+    {
+        $u = auth()->user();
+        $lista = config('finanzas.personal') ?: array_slice(config('finanzas.usuarios', []), 0, 1);
+        return $u && in_array(strtolower($u->email), $lista, true);
+    }
+
     public function index(Request $request)
     {
         $tipo = $request->input('tipo', 'abono');
+        abort_if(in_array($tipo, self::PERSONALES, true) && !self::puedeVerPersonal(), 403);
         $estado = $request->input('estado', 'todos');
         $desde = $request->input('desde', now()->subDays(14)->toDateString());
 
@@ -57,6 +68,9 @@ class FinanzasCorreoController extends Controller
         $filas = $q->limit(500)->get();
 
         $conteo = DB::table('fin_correos')->where('fecha', '>=', $desde)
+            ->when(!self::puedeVerPersonal(), function ($w) {
+                $w->whereNotIn('tipo', self::PERSONALES);
+            })
             ->select('tipo', 'estado', DB::raw('COUNT(*) n'), DB::raw('SUM(monto) total'))
             ->groupBy('tipo', 'estado')->get();
         $ultimo = DB::table('fin_correos')->max('created_at');
@@ -68,6 +82,7 @@ class FinanzasCorreoController extends Controller
     {
         $c = DB::table('fin_correos')->where('id', $id)->first();
         abort_if(!$c, 404);
+        abort_if(in_array($c->tipo, self::PERSONALES, true) && !self::puedeVerPersonal(), 403);
         return view('themes.backoffice.pages.finanzas_correos.show', compact('c'));
     }
 

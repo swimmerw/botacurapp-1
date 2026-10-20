@@ -25,6 +25,14 @@ return [
         })),
     ],
 
+    // Quién ve los gastos personales (correos separados por coma). Vacío = el primero de FINANZAS_USUARIOS.
+    'personal' => array_values(array_filter(array_map(function ($c) {
+        return strtolower(trim($c));
+    }, explode(',', (string) env('FINANZAS_PERSONAL', ''))))),
+
+    // Avisos que llegan al correo personal pero son de cuentas de otras personas (se guardan como 'ajeno').
+    'titulares_ajenos' => array_values(array_filter(array_map('trim', explode(',', (string) env('FIN_TITULARES_AJENOS', 'jaime emersson'))))),
+
     'cuentas' => [
         '36072963894'  => 'BancoEstado Botacura',
         '000216424012' => 'Banco de Chile Botacura',

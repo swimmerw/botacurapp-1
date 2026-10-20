@@ -7,7 +7,10 @@
 @endsection
 
 @php
-    $tipos = ['abono' => 'Abonos recibidos', 'pago' => 'Pagos hechos', 'traspaso' => 'Traspasos entre cuentas', 'retiro' => 'Retiros de socios', 'cuenta' => 'Cuentas por pagar', 'cartola' => 'Cartolas', 'factura' => 'Facturas'];
+    $tipos = ['abono' => 'Abonos recibidos', 'pago' => 'Pagos hechos', 'traspaso' => 'Traspasos entre cuentas', 'retiro' => 'Retiros de socios', 'cuenta' => 'Cuentas por pagar', 'cartola' => 'Cartolas', 'factura' => 'Facturas', 'compra' => 'Compras con tarjeta Botacura'];
+    if (\App\Http\Controllers\FinanzasCorreoController::puedeVerPersonal()) {
+        $tipos += ['personal' => 'Mis gastos personales', 'ajeno' => 'Avisos de otras cuentas'];
+    }
     $estados = ['todos' => 'Todos', 'calzado' => 'Calzados', 'revisar' => 'Por revisar', 'nuevo' => 'Nuevos', 'pagado' => 'Pagados', 'ignorado' => 'Ignorados', 'sospechoso' => 'Sospechosos'];
     $color = ['calzado' => 'green', 'revisar' => 'orange', 'nuevo' => 'blue', 'pagado' => 'teal', 'ignorado' => 'grey', 'sospechoso' => 'red'];
     $escudo = ['seguro' => ['verified_user', 'green-text', 'Verificado: firma del banco'], 'revisar' => ['help', 'orange-text', 'Sin verificar'], 'falso' => ['gpp_bad', 'red-text', 'Falso o alterado']];
@@ -61,7 +64,7 @@
     <table class="striped highlight responsive-table" style="font-size:.9rem">
         <thead><tr>
             <th>Fecha</th>
-            <th>{{ $tipo === 'cuenta' ? 'Proveedor' : ($tipo === 'pago' ? 'Para' : 'De') }}</th>
+            <th>{{ $tipo === 'cuenta' ? 'Proveedor' : (in_array($tipo, ['pago', 'personal', 'compra', 'ajeno', 'retiro', 'traspaso']) ? 'Para' : 'De') }}</th>
             <th>Banco</th><th class="right-align">Monto</th><th>Detalle</th><th>Estado</th>
             @if($tipo === 'abono')<th>Reserva</th>@endif
             <th></th>

@@ -90,6 +90,14 @@ class Lector
             return self::fechaPorDefecto($d, $fechaCorreo);
         }
 
+        if ($banco && self::esPublicidad($r)) {
+            return $d; // publicidad del banco: no mueve dinero
+        }
+
+        if ($banco && !self::origenBotacura($t) && preg_match('/(has realizado una transferencia|acabas de realizar una transferencia|tu transferencia est[áa] lista|transferencia de fondos realizada|has realizado un pago|se ha realizado una compra|compra por \$|pago de comercios|cargo en cuenta)/iu', $todo)) {
+            return self::fechaPorDefecto(self::salidaPersonal($d, $a, $t), $fechaCorreo);
+        }
+
         if ($banco) {
             $esPropio = preg_match('/(hemos realizado una transferencia instruida por nuestro cliente|botacura[\w. ]*?\W+ha instruido una transferencia|has realizado una transferencia|transferencia enviada|comprobante de pago)/i', $t)
                 && preg_match('/centro recreativo botacura/i', $t)
@@ -171,6 +179,135 @@ class Lector
             return $d;
         }
         return self::fechaPorDefecto($d, $fechaCorreo);
+    }
+
+    /** Remitentes de publicidad de los bancos (comercial.bancochile.cl, contacto@cl.bancofalabella.com, ...). */
+    public static function esPublicidad(string $remitente): bool
+    {
+        $r = strtolower($remitente);
+        $local = strstr($r, '@', true) ?: '';
+        $dom = self::dominio($r);
+        return (bool) preg_match('/^(contacto|marketing|promociones?|ofertas|noticias|newsletter|beneficios|comunicaciones|novedades)/', $local)
+            || (bool) preg_match('/^(comercial|marketing|promo|news|mkt|email\.mkt)\./', $dom);
+    }
+
+    /** El correo describe una transferencia hecha desde una cuenta de Botacura. */
+    private static function origenBotacura(string $t): bool
+    {
+        return preg_match('/(hemos realizado una transferencia instruida por nuestro cliente|botacura[\w. ]*?\W+ha instruido una transferencia|has realizado una transferencia|transferencia enviada|comprobante de pago)/i', $t)
+            && preg_match('/centro recreativo botacura/i', $t)
+            && !preg_match('/(has recibido|ha recibido|a tu cuenta|a su cuenta|hacia su cuenta|hacia tu cuenta)/i', $t);
+    }
+
+    /** Titulares cuyos avisos llegan al correo pero no son de Sebastián ni de Botacura. */
+    private static function titularesAjenos(): array
+    {
+        $v = function_exists('config') ? config('finanzas.titulares_ajenos') : null;
+        return $v ?: ['jaime emersson'];
+    }
+
+    /**
+     * Salidas desde cuentas personales: compras con débito ("Cargo en Cuenta"), pagos de cuentas
+     * ("Pago de Comercios") y transferencias a terceros. Si la cuenta es de Botacura queda como 'compra';
+     * si el aviso es de otro titular (p. ej. la cuenta de Jaime) queda como 'ajeno'.
+     */
+    private static function salidaPersonal(array $d, string $a, string $t): array
+    {
+        $d['tipo'] = 'personal';
+
+        if (preg_match('/compra por \$\s?([\d\.]+) con cargo a (?:Cuenta|Tarjeta)[^*\d]{0,20}\*+\s?(\d{3,})\s+en\s+(.+?)\s+el\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2})/iu', $t, $m)) {
+            $d['monto'] = self::monto($m[1]);
+            $d['cuenta'] = $m[2];
+            $d['nombre'] = $m[3];
+            $d['fecha'] = self::fecha($m[4]);
+            $d['hora'] = $m[5];
+            $d['comentario'] = 'Compra con débito';
+        } else {
+            $d['nombre'] = self::primero($t, [
+                '/Nombre y Apellido\s*[|:]?\s*\|?\s*([^|]+?)\s*(?:\||Rut\b)/iu',
+                '/Nombre (?:del )?destinatario\s*[|:]?\s*\|?\s*([^|]+?)\s*(?:\||Rut\b)/iu',
+                '/Hacia:?\s*\|?\s*Nombre\s*:?\s*([^|]+?)\s*(?:\||RUT\b)/iu',
+                '/Nombre del Beneficiario\s*\|?\s*([^|]+?)\s*(?:\||Rut\b)/iu',
+                '/Comercio\s*[|:]?\s*\|?\s*([^|]+?)\s*\|/iu',
+            ]);
+            if (preg_match('/Comercio\s*[|:]/iu', $t)) {
+                $d['comentario'] = 'Pago de cuenta';
+                if ($prov = self::proveedorEnTexto($t)) {
+                    $d['proveedor'] = $prov;
+                    $d['nombre'] = trim(($d['nombre'] ? $d['nombre'] . ' · ' : '') . $prov);
+                }
+            } else {
+                $d['comentario'] = self::primero($t, [
+                    '/(?:Comentario(?: para el destinatario)?|Mensaje)\s*[|:]\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|$)/i',
+                    '/Asunto\s*[|:]?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|$)/i',
+                ]);
+            }
+            $d['rut'] = self::primero($t, ['/(?:Hacia|Destino).{0,120}?R(?:ut|UT)\s*[|:]?\s*\|?\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b/u', '/R(?:ut|UT)\s*[|:]?\s*\|?\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b/u']);
+            $d['monto'] = self::monto(self::primero($t, [
+                '/Monto (?:total|transferido|transferencia|de la transferencia|pagado|a pagar)[^$\d]{0,20}\$\s?([\d\.]+)/iu',
+                '/Monto\s*[|:]?\s*\|?\s*\$\s?([\d\.]+)/iu',
+                '/\$\s?([\d]{1,3}(?:\.\d{3})+|\d{4,})/',
+            ]));
+            $d['operacion'] = self::primero($t, [
+                '/Transacci[óo]n\s*[|:]?\s*\|?\s*([A-Z]{2,}[A-Z0-9]{8,})/u',
+                '/ID de (?:la )?(?:transacci[óo]n|operaci[óo]n)\s*[|:]?\s*\|?\s*([A-Z0-9_]{5,})/iu',
+                '/N[°º]?\s*de TEF\s*:?\s*\|?\s*(\d{4,})/iu',
+                '/N[úu]mero de operaci[óo]n\s*[|:]?\s*\|?\s*(\d{5,})/iu',
+            ]);
+            $d['cuenta'] = self::primero($t, [
+                '/Cuenta de origen\s*[|:]?\s*\|?\s*(?:Cuenta\s*)?(?:Vista|Corriente|RUT)?\s*([\d\-]{6,})/iu',
+                '/Origen.{0,80}?N[úu]mero(?: de cuenta)?\s*[|:]?\s*\|?\s*([\d\-*]{6,})/iu',
+            ]);
+            list($f, $h) = self::fechaHora($t);
+            $d['fecha'] = $f;
+            $d['hora'] = $h;
+        }
+        if ($d['cuenta']) {
+            $d['cuenta'] = ltrim(preg_replace('/\D/', '', $d['cuenta']), '0');
+        }
+
+        $titular = self::primero($t, [
+            '/Estimad[oa](?:\(a\))?:?\s*(?:Sr\(a\)\.?\s*)?([\p{L} ]{3,60}?)\s*(?:,|\||Acabas|Te informamos|Le informamos|se ha realizado)/u',
+            '/^\s*(?:\d{2}\/\d{2}\/\d{4}\s*)?([\p{Lu} ]{3,60}),\s*tu transferencia/u',
+        ]);
+        foreach (self::titularesAjenos() as $aj) {
+            if ($titular && stripos(self::sinTildes($titular), self::sinTildes($aj)) !== false) {
+                $d['tipo'] = 'ajeno';
+                $d['comentario'] = trim('Aviso de ' . $titular . ($d['comentario'] ? ' · ' . $d['comentario'] : ''));
+            }
+        }
+        if ($d['tipo'] === 'personal' && $d['cuenta'] && self::esCuentaBotacura($d['cuenta'])) {
+            $d['tipo'] = 'compra'; // tarjeta o cuenta de Botacura
+        }
+        return $d;
+    }
+
+    private static function esCuentaBotacura(string $digitos): bool
+    {
+        $cuentas = function_exists('config') ? (array) config('finanzas.cuentas') : [];
+        foreach ($cuentas as $num => $nombre) {
+            $num = ltrim((string) $num, '0');
+            if (stripos($nombre, 'botacura') !== false && strlen($digitos) >= 4
+                && substr($num, -strlen($digitos)) === $digitos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function proveedorEnTexto(string $t): ?string
+    {
+        foreach (self::PROVEEDORES as $clave => $nombre) {
+            if ($clave !== 'servipag' && preg_match('/\b' . preg_quote($clave, '/') . '\b/i', $t)) {
+                return $nombre;
+            }
+        }
+        return null;
+    }
+
+    private static function sinTildes(string $s): string
+    {
+        return strtolower(strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u', 'ñ' => 'n', 'Ñ' => 'n']));
     }
 
     private static function fechaPorDefecto(array $d, ?string $fechaCorreo): array

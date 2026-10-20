@@ -32,6 +32,10 @@ class Seguridad
         if (preg_match('/sin llave pública|no soportado/', $dk['detalle']) && !preg_match('/modificado|no es válida/', $dk['detalle'])) {
             return ['seguridad' => 'revisar', 'detalle' => mb_substr($dk['detalle'], 0, 180)];
         }
+        if (!$banco) {
+            // Boletas de proveedores: suelen pasar por intermediarios (p. ej. acepta.com) que alteran el correo.
+            return ['seguridad' => 'revisar', 'detalle' => mb_substr('Firma no calza (no es banco): ' . $dk['detalle'], 0, 180)];
+        }
         return ['seguridad' => 'falso', 'detalle' => mb_substr('Firma inválida: ' . $dk['detalle'], 0, 180)];
     }
 
