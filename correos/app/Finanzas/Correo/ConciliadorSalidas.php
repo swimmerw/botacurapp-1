@@ -60,12 +60,29 @@ class ConciliadorSalidas
                 ? ['estado' => 'revisar', 'nota' => '¿Es de Botacura? ' . $mejor['label']]
                 : [];
         }
+        // Remuneración: la semana sin pagar de ese funcionario cuyo total es exactamente este monto
+        $como = null;
+        $persona = $this->persona($c, $como);
+        if ($c->tipo === 'pago' && $persona && ($como !== 'nombre' || preg_match('/remuneraci|sueldo/i', (string) $c->comentario))) {
+            $sem = app(\App\Finanzas\SueldoSemanas::class)->semanaPorMonto((int) $persona->id, (int) $c->monto, $c->fecha ?: date('Y-m-d'));
+            if ($sem) {
+                if (($c->seguridad ?? 'seguro') !== 'seguro') {
+                    return ['estado' => 'revisar', 'nota' => "Calza con {$persona->name}, {$sem['etiqueta']}, pero el correo no pasó la verificación del banco"];
+                }
+                return ['estado' => 'calzado', 'vinculo' => 'sueldo', 'pagar_semana' => $sem, 'user_id' => $persona->id,
+                        'nota' => "Remuneración de {$persona->name}, {$sem['etiqueta']}: marcada pagada"];
+            }
+        }
         if ($mejor && $mejor['puntos'] >= 2) {
             return ['estado' => 'revisar', 'nota' => 'Posible: ' . $mejor['label']];
         }
-        $persona = $this->persona($c);
         if ($persona) {
-            return ['estado' => 'revisar', 'nota' => "Pago a {$persona->name} sin sueldo registrado por este monto"];
+            $iguales = count(array_filter(app(\App\Finanzas\SueldoSemanas::class)->pendientes((int) $persona->id, $c->fecha ?: date('Y-m-d')), function ($w) use ($c) {
+                return !$w['pagado'] && (int) $w['total'] === (int) $c->monto;
+            }));
+            return ['estado' => 'revisar', 'nota' => $iguales > 1
+                ? "Pago a {$persona->name}: {$iguales} semanas sin pagar por este monto, elige cuál en la ficha"
+                : "Pago a {$persona->name}: ninguna semana sin pagar suma este monto"];
         }
         return ['estado' => 'revisar', 'nota' => $c->tipo === 'compra' ? 'Compra sin egreso registrado' : 'Pago sin registrar en BotacurApp'];
     }
@@ -75,6 +92,11 @@ class ConciliadorSalidas
     {
         if (!$res || !in_array($c->estado, ['nuevo', 'revisar'], true)) {
             return;
+        }
+        if (!empty($res['pagar_semana'])) {
+            // Marca la semana "Pagado" en Remuneraciones con la fecha de la transferencia
+            $res['sueldo_pagado_id'] = app(\App\Finanzas\SueldoSemanas::class)
+                ->marcarPagada((int) $res['user_id'], $res['pagar_semana'], $c->fecha ?: date('Y-m-d'));
         }
         $cols = ['estado', 'nota', 'vinculo', 'sueldo_pagado_id', 'pago_egreso_id', 'correo_id'];
         DB::table('fin_correos')->where('id', $c->id)->update(
@@ -156,8 +178,9 @@ class ConciliadorSalidas
     }
 
     /** Persona del equipo a la que va el pago: por RUT, por N° de cuenta o por nombre. */
-    public function persona($c)
+    public function persona($c, &$como = null)
     {
+        $como = null;
         static $users = null;
         if ($users === null) {
             $users = Schema::hasTable('users')
@@ -166,6 +189,7 @@ class ConciliadorSalidas
         if ($c->rut) {
             foreach ($users as $u) {
                 if ($u->rut && self::rut($u->rut) === self::rut($c->rut)) {
+                    $como = 'rut';
                     return $u;
                 }
             }
@@ -174,6 +198,7 @@ class ConciliadorSalidas
             foreach ($users as $u) {
                 $n = ltrim(preg_replace('/\D/', '', (string) $u->numero_cuenta_bancaria), '0');
                 if ($n && $n === ltrim($c->cuenta, '0')) {
+                    $como = 'cuenta';
                     return $u;
                 }
             }
@@ -187,6 +212,7 @@ class ConciliadorSalidas
                 $hit = $u;
             }
         }
+        $como = $hit ? 'nombre' : null;
         return $hit;
     }
 

@@ -50,6 +50,18 @@
                 <span class="card-title" style="font-size:1.1rem">¿A qué corresponde esta salida?</span>
                 @if(!empty($persona))<p class="grey-text" style="margin-top:0">Va a <strong>{{ $persona->name }}</strong> (equipo).</p>@endif
                 @if(!empty($c->vinculo))<p><span class="chip green lighten-4">{{ ['sueldo' => 'Sueldo', 'egreso' => 'Egreso', 'reembolso' => 'Botacura te debe este gasto', 'cuenta' => 'Pago de cuenta'][$c->vinculo] ?? $c->vinculo }}</span> {{ $c->nota }}</p>@endif
+                @if(!empty($semanas) && $c->estado !== 'calzado')
+                    <p style="margin:8px 0 4px"><strong>Semanas sin pagar de {{ $persona->name }}</strong> <small class="grey-text">(total de Remuneraciones)</small></p>
+                    @foreach($semanas as $w)
+                        <form method="POST" action="{{ route('backoffice.finanzas.correos.pagar_semana', $c->id) }}" style="margin:4px 0">@csrf
+                            <input type="hidden" name="inicio" value="{{ $w['inicio'] }}"><input type="hidden" name="fin" value="{{ $w['fin'] }}">
+                            <button class="btn-small {{ (int) $w['total'] === (int) $c->monto ? 'green' : 'blue-grey' }} lighten-1">Marcar pagada</button>
+                            <span style="font-size:.9rem">{{ $w['etiqueta'] }} · ${{ number_format($w['total'], 0, ',', '.') }}
+                                @if((int) $w['total'] === (int) $c->monto)<span class="green-text">· mismo monto</span>@endif</span>
+                        </form>
+                    @endforeach
+                    <div class="divider" style="margin:10px 0"></div>
+                @endif
                 @forelse($candidatos as $k)
                     <form method="POST" action="{{ route('backoffice.finanzas.correos.vincular', $c->id) }}" style="margin:6px 0">@csrf
                         <input type="hidden" name="clase" value="{{ $k['clase'] }}"><input type="hidden" name="ref" value="{{ $k['id'] }}"><input type="hidden" name="label" value="{{ $k['label'] }}">

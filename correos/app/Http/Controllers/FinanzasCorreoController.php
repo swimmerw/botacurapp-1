@@ -91,8 +91,13 @@ class FinanzasCorreoController extends Controller
             $candidatos = array_slice($s->candidatos($c), 0, 6);
             $persona = $s->persona($c);
         }
+        $semanas = ($persona && $c->tipo === 'pago')
+            ? array_slice(array_values(array_filter(app(\App\Finanzas\SueldoSemanas::class)->pendientes((int) $persona->id, $c->fecha ?: date('Y-m-d')), function ($w) {
+                return !$w['pagado'];
+            })), 0, 6)
+            : [];
         $relacionado = !empty($c->correo_id) ? DB::table('fin_correos')->where('id', $c->correo_id)->first() : null;
-        return view('themes.backoffice.pages.finanzas_correos.show', compact('c', 'candidatos', 'persona', 'relacionado'));
+        return view('themes.backoffice.pages.finanzas_correos.show', compact('c', 'candidatos', 'persona', 'relacionado', 'semanas'));
     }
 
     /** Asociar a mano un abono con una venta (N° de venta o de reserva). */
@@ -132,6 +137,31 @@ class FinanzasCorreoController extends Controller
             'updated_at' => now(),
         ]);
         return back()->with('success', 'Salida asociada.');
+    }
+
+    /** Marca a mano una semana de remuneración como pagada con esta transferencia. */
+    public function pagarSemana(Request $request, $id)
+    {
+        $request->validate(['inicio' => 'required|date', 'fin' => 'required|date']);
+        $c = DB::table('fin_correos')->where('id', $id)->first();
+        abort_if(!$c || $c->tipo !== 'pago', 404);
+        abort_unless(auth()->user()->has_role(config('app.admin_role')), 403);
+        $persona = app(ConciliadorSalidas::class)->persona($c);
+        abort_if(!$persona, 422, 'No sé a qué funcionario va este pago.');
+        $sem = collect(app(\App\Finanzas\SueldoSemanas::class)->pendientes((int) $persona->id, $c->fecha ?: date('Y-m-d')))
+            ->first(function ($w) use ($request) {
+                return $w['inicio'] === $request->inicio && $w['fin'] === $request->fin && !$w['pagado'];
+            });
+        if (!$sem) {
+            return back()->with('error', 'Esa semana ya está pagada o no tiene días trabajados.');
+        }
+        $spId = app(\App\Finanzas\SueldoSemanas::class)->marcarPagada((int) $persona->id, $sem, $c->fecha ?: date('Y-m-d'));
+        DB::table('fin_correos')->where('id', $id)->update([
+            'estado' => 'calzado', 'vinculo' => 'sueldo', 'sueldo_pagado_id' => $spId,
+            'nota' => mb_substr("Remuneración de {$persona->name}, {$sem['etiqueta']} · marcada por " . auth()->user()->name, 0, 191),
+            'updated_at' => now(),
+        ]);
+        return back()->with('success', "{$sem['etiqueta']} de {$persona->name} quedó Pagada en Remuneraciones.");
     }
 
     /**

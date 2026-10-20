@@ -11,5 +11,6 @@ Route::prefix('finanzas/correos')->name('finanzas.correos.')->group(function () 
     Route::get('/{id}', 'FinanzasCorreoController@show')->name('show');
     Route::post('/{id}/asociar', 'FinanzasCorreoController@asociar')->name('asociar');
     Route::post('/{id}/vincular', 'FinanzasCorreoController@vincular')->name('vincular');
+    Route::post('/{id}/pagar-semana', 'FinanzasCorreoController@pagarSemana')->name('pagar_semana');
     Route::post('/{id}/estado', 'FinanzasCorreoController@estado')->name('estado');
 });
