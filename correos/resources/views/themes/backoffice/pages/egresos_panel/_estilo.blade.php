@@ -7,6 +7,8 @@
     .eg .eyebrow { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: #6b756f; }
     .eg .top { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
     .eg .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .eg nav.pills { background: none; height: auto; line-height: normal; box-shadow: none; width: auto; color: inherit; }
+    .eg nav.pills a, .eg nav.pills span { line-height: normal; height: auto; }
     .eg .pill { padding: 8px 14px; border: 1px solid #dfe3e0; border-radius: 999px; background: #fff; color: #3b4541; font-size: .88rem; }
     .eg .pill.on { background: #1f2a26; border-color: #1f2a26; color: #fff; }
     .eg .card-e { background: #fff; border: 1px solid #e6e9e7; border-radius: 12px; padding: 16px 18px; }

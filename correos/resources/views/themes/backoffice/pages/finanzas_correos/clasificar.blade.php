@@ -20,6 +20,7 @@
     .clf h1 { font-size: 1.6rem; font-weight: 500; margin: 8px 0 2px; }
     .clf .sub { color: #6b756f; font-size: .9rem; margin: 0 0 18px; }
     .clf .tabs-c { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .clf nav.tabs-c { background: none; height: auto; line-height: normal; box-shadow: none; width: auto; color: inherit; }
     .clf a, .clf a:hover { text-decoration: none; }
     .clf .tab-c { display: inline-flex; align-items: baseline; gap: 8px; padding: 8px 14px; border: 1px solid #dfe3e0; border-radius: 999px; color: #3b4541; background: #fff; font-size: .9rem; }
     .clf .tab-c.on { background: #1f2a26; border-color: #1f2a26; color: #fff; }

@@ -39,12 +39,12 @@
 
     @if(!$faltan)
         <div class="aviso ok" role="status">
-            <i class="material-icons" aria-hidden="true">task_alt</i>
+            <span class="ms" aria-hidden="true">task_alt</span>
             <div><strong>{{ ucfirst($mesCorto) }} está cuadrado.</strong> Cada factura tiene su pago, no hay movimientos del banco por clasificar y no hay cuentas vencidas.</div>
         </div>
     @else
         <div class="aviso falta" role="status">
-            <i class="material-icons" aria-hidden="true">pending_actions</i>
+            <span class="ms" aria-hidden="true">pending_actions</span>
             <div><strong>Para cuadrar {{ $mesCorto }} falta:</strong>
                 @foreach($faltan as $f)<a href="{{ $f['href'] }}">{{ $f['n'] }} {{ $f['txt'] }}</a>@if(!$loop->last) · @endif @endforeach
             </div>
