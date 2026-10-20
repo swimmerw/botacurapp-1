@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Finanzas\Correo\ConciliadorAbonos;
+use App\Finanzas\Correo\ConciliadorSalidas;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -83,7 +84,15 @@ class FinanzasCorreoController extends Controller
         $c = DB::table('fin_correos')->where('id', $id)->first();
         abort_if(!$c, 404);
         abort_if(in_array($c->tipo, self::PERSONALES, true) && !self::puedeVerPersonal(), 403);
-        return view('themes.backoffice.pages.finanzas_correos.show', compact('c'));
+        $candidatos = [];
+        $persona = null;
+        if (in_array($c->tipo, ['pago', 'compra', 'personal'], true) && \Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'vinculo')) {
+            $s = app(ConciliadorSalidas::class);
+            $candidatos = array_slice($s->candidatos($c), 0, 6);
+            $persona = $s->persona($c);
+        }
+        $relacionado = !empty($c->correo_id) ? DB::table('fin_correos')->where('id', $c->correo_id)->first() : null;
+        return view('themes.backoffice.pages.finanzas_correos.show', compact('c', 'candidatos', 'persona', 'relacionado'));
     }
 
     /** Asociar a mano un abono con una venta (N° de venta o de reserva). */
@@ -104,6 +113,95 @@ class FinanzasCorreoController extends Controller
             'nota' => 'Asociado a mano por ' . auth()->user()->name, 'updated_at' => now(),
         ]);
         return back()->with('success', "Abono asociado a la venta #{$venta->id}.");
+    }
+
+    /** Asociar a mano una salida con un sueldo pagado o con el pago de un egreso. */
+    public function vincular(Request $request, $id)
+    {
+        $request->validate(['clase' => 'required|in:sueldo,egreso', 'ref' => 'required|integer']);
+        $c = DB::table('fin_correos')->where('id', $id)->first();
+        abort_if(!$c || !in_array($c->tipo, ['pago', 'compra', 'personal'], true), 404);
+        $tabla = $request->clase === 'sueldo' ? 'sueldos_pagados' : 'pagos_egresos';
+        abort_unless(DB::table($tabla)->where('id', $request->ref)->exists(), 404);
+        DB::table('fin_correos')->where('id', $id)->update([
+            'estado' => 'calzado',
+            'vinculo' => $c->tipo === 'personal' ? 'reembolso' : $request->clase,
+            'sueldo_pagado_id' => $request->clase === 'sueldo' ? $request->ref : null,
+            'pago_egreso_id' => $request->clase === 'egreso' ? $request->ref : null,
+            'nota' => mb_substr(($request->input('label') ?: ucfirst($request->clase) . ' #' . $request->ref) . ' · asociado por ' . auth()->user()->name, 0, 191),
+            'updated_at' => now(),
+        ]);
+        return back()->with('success', 'Salida asociada.');
+    }
+
+    /**
+     * Movimientos: entradas y salidas avisadas por los bancos, día por día, con su cruce.
+     * Ámbito "botacura" (cuentas de la empresa) o "personal" (solo quien ve lo personal).
+     */
+    public function movimientos(Request $request)
+    {
+        $ambito = $request->input('ambito', 'botacura');
+        abort_if($ambito === 'personal' && !self::puedeVerPersonal(), 403);
+        $desde = $request->input('desde', now()->subDays(6)->toDateString());
+        $hasta = $request->input('hasta', now()->toDateString());
+
+        $tipos = ['abono', 'pago', 'retiro', 'traspaso', 'compra', 'personal'];
+        $filas = DB::table('fin_correos as c')
+            ->leftJoin('ventas as v', 'v.id', '=', 'c.venta_id')
+            ->leftJoin('reservas as r', 'r.id', '=', 'v.id_reserva')
+            ->leftJoin('clientes as cl', 'cl.id', '=', 'r.cliente_id')
+            ->whereIn('c.tipo', $tipos)->whereNotIn('c.estado', ['ignorado', 'sospechoso'])
+            ->whereBetween('c.fecha', [$desde, $hasta])
+            ->orderByDesc('c.fecha')->orderByDesc('c.hora')->orderByDesc('c.id')
+            ->select('c.*', 'r.id as reserva_id', 'r.fecha_visita', 'cl.nombre_cliente')
+            ->limit(1500)->get()
+            ->filter(function ($c) use ($ambito) {
+                return self::ambito($c) === $ambito;
+            })->values();
+
+        $entra = function ($c) {
+            return $c->tipo === 'abono';
+        };
+        $res = [
+            'entradas'   => $filas->filter($entra)->sum('monto'),
+            'salidas'    => $filas->reject($entra)->where('tipo', '!=', 'traspaso')->sum('monto'),
+            'abonos_ok'  => $filas->where('tipo', 'abono')->where('estado', 'calzado')->count(),
+            'abonos_rev' => $filas->where('tipo', 'abono')->where('estado', '!=', 'calzado')->count(),
+            'sin_reg'    => $filas->whereIn('tipo', ['pago', 'compra'])->where('estado', '!=', 'calzado'),
+            'retiros'    => $filas->where('tipo', 'retiro')->groupBy('nombre')->map(function ($g) {
+                return $g->sum('monto');
+            }),
+            'reembolsos' => self::puedeVerPersonal()
+                ? DB::table('fin_correos')->where('vinculo', 'reembolso')->where('estado', 'calzado')->whereBetween('fecha', [$desde, $hasta])->get()
+                : collect(),
+        ];
+        $cuentas = DB::table('fin_correos')->where('tipo', 'cuenta')->whereIn('estado', ['nuevo', 'revisar'])
+            ->orderByRaw('vencimiento IS NULL')->orderBy('vencimiento')->limit(30)->get();
+        $dias = $filas->groupBy('fecha');
+
+        return view('themes.backoffice.pages.finanzas_correos.movimientos',
+            compact('dias', 'res', 'cuentas', 'ambito', 'desde', 'hasta'));
+    }
+
+    /** ¿El movimiento es de las cuentas de Botacura o de la cuenta personal? */
+    public static function ambito($c): string
+    {
+        if (in_array($c->tipo, ['personal', 'ajeno'], true)) {
+            return 'personal';
+        }
+        if ($c->tipo !== 'abono') {
+            return 'botacura'; // pagos, compras, traspasos y retiros salen de Botacura
+        }
+        $nombre = null;
+        foreach ((array) config('finanzas.cuentas') as $num => $n) {
+            if ($c->cuenta && ltrim((string) $num, '0') === ltrim((string) $c->cuenta, '0')) {
+                $nombre = $n;
+            }
+        }
+        if ($nombre) {
+            return stripos($nombre, 'botacura') !== false ? 'botacura' : 'personal';
+        }
+        return (empty($c->buzon) || stripos($c->buzon, 'botacura') !== false) ? 'botacura' : 'personal';
     }
 
     public function estado(Request $request, $id)

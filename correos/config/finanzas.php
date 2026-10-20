@@ -37,7 +37,7 @@ return [
         '36072963894'  => 'BancoEstado Botacura',
         '000216424012' => 'Banco de Chile Botacura',
         '216424012'    => 'Banco de Chile Botacura',
-        '00207023120'  => 'Banco de Chile Sebastián',
+        '002070231203' => 'Banco de Chile Sebastián',
         '36072581665'  => 'BancoEstado DS Web',
     ],
 ];

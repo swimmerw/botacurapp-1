@@ -146,12 +146,16 @@ class Lector
                 '/\|\s*BANCO [^|]+\|\s*(\d{10,})\s*\|/i',
                 '/N[°º]?\s*de operaci[óo]n\s*:?\s*([A-Z0-9]{5,})/i',
             ]);
-            $d['rut'] = self::primero($t, ['/(?:Rut cuenta origen|RUT origen)[^\d]{0,40}(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])/i']);
+            $d['rut'] = $d['tipo'] === 'abono'
+                ? self::primero($t, ['/(?:Rut cuenta origen|RUT origen)[^\d]{0,40}(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])/i'])
+                : self::primero($t, ['/(?:Rut Empresa|Rut del Beneficiario|Rut Beneficiario|Rut destinatario|RUT destino)\s*[|:]?\s*\|?\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])/iu']);
             $d['comentario'] = self::primero($t, [
                 '/(?:Comentario(?: para el destinatario)?|Mensaje)\s*[|:]\s*\|?\s*:?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|Inf[óo]rmese|N[úu]mero|$)/i',
                 '/Asunto\s*\|?\s*:?\s*\|?\s*([^|]{2,120}?)\s*(\||Monto|Inf[óo]rmese|N[úu]mero|$)/i',
+                '/Descripci[óo]n\s*\|\s*([^|]{2,120}?)\s*\|/iu',
             ]);
             $d['cuenta'] = self::primero($t, [
+                '/Nro\.? Cuenta\s*\|?\s*:?\s*([\d\-]{6,})/i',
                 '/(?:N[º°]? de cuenta|N[úu]mero de Cuenta Corriente|Cuenta de destino|Cuenta destino|cuenta N°|nro\.)\s*\|?\s*:?\s*(?:Cuenta Vista|Cuenta Corriente)?\s*([\d\-]{8,})/i',
             ]);
             if ($d['cuenta']) {

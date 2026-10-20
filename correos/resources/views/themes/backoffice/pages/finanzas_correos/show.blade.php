@@ -23,7 +23,7 @@
                         @elseif($c->seguridad === 'falso')<span class="red-text"><i class="material-icons tiny">gpp_bad</i> Falso o alterado</span>
                         @else<span class="orange-text"><i class="material-icons tiny">help</i> Sin verificar</span>@endif
                         <br><small class="grey-text">{{ $c->seguridad_detalle }}</small></td></tr>
-                    <tr><td class="grey-text">Cuenta</td><td>{{ $c->cuenta }} {{ config('finanzas.cuentas.' . $c->cuenta) }}</td></tr>
+                    <tr><td class="grey-text">Cuenta</td><td>{{ $c->cuenta }}</td></tr>
                     <tr><td class="grey-text">N° operación</td><td>{{ $c->operacion }}</td></tr>
                     <tr><td class="grey-text">Comentario</td><td>{{ $c->comentario }}</td></tr>
                     @if($c->vencimiento)<tr><td class="grey-text">Vence</td><td>{{ $c->vencimiento }}</td></tr>@endif
@@ -45,10 +45,36 @@
             </div></div>
             @endif
 
+            @if(in_array($c->tipo, ['pago', 'compra', 'personal']) && isset($candidatos))
+            <div class="card"><div class="card-content">
+                <span class="card-title" style="font-size:1.1rem">¿A qué corresponde esta salida?</span>
+                @if(!empty($persona))<p class="grey-text" style="margin-top:0">Va a <strong>{{ $persona->name }}</strong> (equipo).</p>@endif
+                @if(!empty($c->vinculo))<p><span class="chip green lighten-4">{{ ['sueldo' => 'Sueldo', 'egreso' => 'Egreso', 'reembolso' => 'Botacura te debe este gasto', 'cuenta' => 'Pago de cuenta'][$c->vinculo] ?? $c->vinculo }}</span> {{ $c->nota }}</p>@endif
+                @forelse($candidatos as $k)
+                    <form method="POST" action="{{ route('backoffice.finanzas.correos.vincular', $c->id) }}" style="margin:6px 0">@csrf
+                        <input type="hidden" name="clase" value="{{ $k['clase'] }}"><input type="hidden" name="ref" value="{{ $k['id'] }}"><input type="hidden" name="label" value="{{ $k['label'] }}">
+                        <button class="btn-small {{ $k['puntos'] >= 3 ? 'green' : 'blue-grey' }} lighten-1" title="Coincidencia {{ $k['puntos'] }}/5">Es este</button>
+                        <span style="font-size:.9rem">{{ $k['label'] }}</span>
+                    </form>
+                @empty
+                    <p class="grey-text">No hay sueldos ni egresos registrados por este monto cerca de esta fecha.
+                        @if($c->tipo !== 'personal') Regístralo en Egresos o Sueldos y vuelve a cruzar con "Leer ahora".@endif</p>
+                @endforelse
+            </div></div>
+            @endif
+
+            @if(!empty($relacionado))
+            <div class="card-panel" style="font-size:.9rem">
+                <i class="material-icons tiny">link</i>
+                {{ $relacionado->tipo === 'cuenta' ? 'Paga la cuenta' : 'Pagada con' }}:
+                <a href="{{ route('backoffice.finanzas.correos.show', $relacionado->id) }}">{{ $relacionado->proveedor ?: $relacionado->nombre }} · ${{ number_format($relacionado->monto, 0, ',', '.') }} · {{ $relacionado->fecha }}</a>
+            </div>
+            @endif
+
             <form method="POST" action="{{ route('backoffice.finanzas.correos.estado', $c->id) }}" class="card-panel">@csrf
                 <input type="text" name="nota" placeholder="Nota (opcional)">
                 @if($c->tipo === 'cuenta')<button name="estado" value="pagado" class="btn teal">Marcar pagada</button>@endif
-                <button name="estado" value="ignorado" class="btn grey">Ignorar</button>
+                <button name="estado" value="ignorado" class="btn grey">{{ $c->tipo === 'personal' ? 'No es de Botacura' : 'Ignorar' }}</button>
                 <button name="estado" value="revisar" class="btn-flat">Dejar por revisar</button>
             </form>
         </div>

@@ -31,6 +31,7 @@
             </p>
         </div>
         <div class="col s12 m4 right-align">
+            <a href="{{ route('backoffice.finanzas.correos.movimientos') }}" class="btn-flat"><i class="material-icons left">swap_vert</i>Movimientos</a>
             <form method="POST" action="{{ route('backoffice.finanzas.correos.leer') }}" style="display:inline">@csrf
                 <button class="btn waves-effect blue darken-1"><i class="material-icons left">refresh</i>Leer ahora</button>
             </form>

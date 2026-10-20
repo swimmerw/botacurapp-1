@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Finanzas\Correo\ConciliadorAbonos;
+use App\Finanzas\Correo\ConciliadorSalidas;
 use App\Finanzas\Correo\ImapCliente;
 use App\Finanzas\Correo\Lector;
 use App\Finanzas\Correo\Mime;
@@ -133,6 +134,8 @@ class LeerCorreosBancarios extends Command
                 if ($d['tipo'] === 'abono' && $seg['seguridad'] !== 'falso') {
                     $c = DB::table('fin_correos')->where('id', $id)->first();
                     $conc->aplicar($c, $conc->conciliar($c));
+                } elseif ($seg['seguridad'] !== 'falso') {
+                    $this->cruzarSalida($id);
                 }
             }
         } finally {
@@ -184,10 +187,28 @@ class LeerCorreosBancarios extends Command
                 && ($c->tipo !== 'abono' || in_array($c->estado, ['nuevo', 'revisar'], true))) {
                 $c2 = DB::table('fin_correos')->where('id', $c->id)->first();
                 $conc->aplicar($c2, $conc->conciliar($c2));
+            } elseif (($c->seguridad ?? '') !== 'falso') {
+                $this->cruzarSalida($c->id);
             }
         }
         $this->info('Reinterpretados: ' . ($cambios ? json_encode($cambios, JSON_UNESCAPED_UNICODE) : 'sin cambios de tipo'));
         return 0;
+    }
+
+    /** Cruza una salida (pago, compra, retiro, cuenta...) con sueldos, egresos y cuentas. */
+    private function cruzarSalida(int $id): bool
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'vinculo')) {
+            return false;
+        }
+        $c = DB::table('fin_correos')->where('id', $id)->first();
+        if (!$c || !in_array($c->tipo, ConciliadorSalidas::TIPOS, true)) {
+            return false;
+        }
+        $s = app(ConciliadorSalidas::class);
+        $r = $s->conciliar($c);
+        $s->aplicar($c, $r);
+        return in_array($r['estado'] ?? null, ['calzado', 'pagado'], true);
     }
 
     private function recruzar(ConciliadorAbonos $conc)
@@ -199,6 +220,13 @@ class LeerCorreosBancarios extends Command
             $n += ($r['estado'] === 'calzado') ? 1 : 0;
         }
         $this->info("Abonos calzados ahora: {$n}");
+        $m = 0;
+        if (\Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'vinculo')) {
+            foreach (DB::table('fin_correos')->whereIn('tipo', ConciliadorSalidas::TIPOS)->whereIn('estado', ['nuevo', 'revisar'])->pluck('id') as $id) {
+                $m += $this->cruzarSalida($id) ? 1 : 0;
+            }
+            $this->info("Salidas cruzadas ahora: {$m}");
+        }
         return 0;
     }
 }
