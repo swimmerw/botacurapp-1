@@ -40,7 +40,7 @@
             ['Gift cards', 'redeem', 'backoffice.giftcards.index', [], $rol('admin', 'jefe_local'), 'backoffice.giftcards.*'],
         ]],
         ['Operación', 'room_service', [
-            ['Consumos', 'receipt', 'backoffice.reserva.venta.cierre', [], $rol('garzon', 'anfitriona', 'admin', 'jefe_local'), 'backoffice.reserva.venta.cierre'],
+            ['Gestión de consumo', 'receipt', 'backoffice.reserva.venta.cierre', [], $rol('garzon', 'anfitriona', 'admin', 'jefe_local'), 'backoffice.reserva.venta.cierre'],
             ['Cocina · menús', 'restaurant', 'backoffice.menu.index', [], $rol('cocina', 'garzon', 'admin', 'jefe_local'), 'backoffice.menu.*'],
             ['Barra · bebidas', 'local_bar', 'backoffice.barman.index', [], $rol('barman', 'admin', 'jefe_local'), 'backoffice.barman.index'],
             ['Bebidas pedidas', 'local_bar', 'backoffice.barman.bebidas', [], $rol('garzon'), 'backoffice.barman.bebidas', 'bebidasGarzon'],
