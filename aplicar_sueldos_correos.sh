@@ -1,4 +1,5 @@
 #!/bin/bash
+# 0) Pagos a la cuenta del café de Francisca = Insumos › Café, no sueldo.
 # 1) El aviso del banco confirma el sueldo en Remuneraciones (también los que ya estaban registrados sin confirmar).
 # 2) Reinicia la cola de correos para que use el código nuevo y manda dos correos de prueba.
 # Uso: curl -sL .../aplicar_sueldos_correos.sh | bash -s tu@correo.cl
@@ -9,15 +10,22 @@ SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parc
 U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/$SHA/sueldos
 echo "Version: ${SHA:0:7}"
 TS=$(date +%Y%m%d%H%M)
-FILES="app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/ConciliadorSalidas.php app/Http/Controllers/FinanzasCorreoController.php"
+FILES="config/egresos.php config/finanzas.php app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/ConciliadorSalidas.php app/Http/Controllers/FinanzasCorreoController.php"
 for f in $FILES; do cp $f $f.bak.$TS; done
 restaurar() { for f in $FILES; do cp $f.bak.$TS $f; done; echo "ERROR: $1 (restaurado)"; exit 1; }
 curl -fsSL "$U/patch_confirmar.py" | python3 - || restaurar "parche"
+curl -fsSL "$U/patch_cafe.py" | python3 - || restaurar "parche café"
+php artisan config:clear >/dev/null
 for f in $FILES; do php -l $f >/dev/null || restaurar "sintaxis en $f"; done
 curl -fsSL "$U/app/Mail/PruebaMailable.php" -o app/Mail/PruebaMailable.php && php -l app/Mail/PruebaMailable.php >/dev/null || echo "Aviso: no pude instalar el correo de prueba"
-mkdir -p /tmp/bt_$TS && curl -fsSL "$U/retro.php" -o retro_tmp_$TS.php && curl -fsSL "$U/prueba_correo.php" -o prueba_tmp_$TS.php
+curl -fsSL "$U/retro.php" -o retro_tmp_$TS.php && curl -fsSL "$U/prueba_correo.php" -o prueba_tmp_$TS.php && curl -fsSL "$U/hoy.php" -o hoy_tmp_$TS.php
+echo "---- Leyendo los avisos del banco de hoy y volviendo a cruzar"
+php artisan finanzas:leer-correos --dias=2 | tail -n 15
+php artisan finanzas:leer-correos --recruzar | tail -n 8
 echo "---- Remuneraciones con aviso del banco"
 php retro_tmp_$TS.php
+echo "---- Avisos de ayer y hoy"
+php hoy_tmp_$TS.php
 echo "---- Cola de correos"
 for P in $(pgrep -f "artisan queue:work"); do
   echo "  proceso $P · lo maneja: $(ps -o unit= -p $P 2>/dev/null) · padre: $(ps -o cmd= -p $(ps -o ppid= -p $P) | cut -c1-60)"
@@ -36,5 +44,5 @@ if [ -n "$DEST" ]; then
   sleep 12
   php -r 'require "vendor/autoload.php"; $a=require "bootstrap/app.php"; $a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo "  En cola ahora: ", DB::table("jobs")->count(), " · fallidos en los últimos 10 min: ", DB::table("failed_jobs")->where("failed_at", ">=", now()->subMinutes(10))->count(), "\n";'
 fi
-rm -f retro_tmp_$TS.php prueba_tmp_$TS.php; rmdir /tmp/bt_$TS 2>/dev/null
+rm -f retro_tmp_$TS.php prueba_tmp_$TS.php hoy_tmp_$TS.php
 echo "Si algo sale mal: for f in $FILES; do cp \$f.bak.$TS \$f; done"
