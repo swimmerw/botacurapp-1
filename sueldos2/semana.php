@@ -18,8 +18,8 @@ echo count($cods) ? "Corregidos los que no tenían venta asociada.\n" : "Sin có
 
 echo "\nSemana 12-10 al 18-10 · pagados el 20-10 en la mañana (sin aviso del banco)" . ($aplicar ? '' : ' · SIMULACIÓN') . "\n";
 $ss = app(App\Finanzas\SueldoSemanas::class);
-foreach (['Alejandro', 'Octavio', 'Natalia', 'Paula', 'Fernando Castro', 'Catalina', 'Catherine'] as $n) {
-    $us = DB::table('users')->where('name', 'like', $n . '%')->get(['id', 'name']);
+foreach (['Alejandro', 'Octavio', 'Natalia', 'Paula Riquelme', 'Fernando Castro', 'Catalina', 'Catherine', 'Javiera Castro', 'Oliver', 'Paz Meza'] as $n) {
+    $us = DB::table('users')->where('name', 'like', '%' . $n . '%')->get(['id', 'name']);
     if ($us->count() !== 1) {
         echo "  $n: " . ($us->count() ? 'varios (' . $us->pluck('name')->implode(', ') . ')' : 'no encontrado') . " · no lo toco\n";
         continue;
