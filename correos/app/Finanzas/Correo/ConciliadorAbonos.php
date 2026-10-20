@@ -50,6 +50,37 @@ class ConciliadorAbonos
         return ['estado' => 'revisar', 'nota' => count($cands) . ' candidatos con el mismo monto'];
     }
 
+    /**
+     * Opciones para asociar a mano: las del cruce (mismo monto) y, si no hay,
+     * reservas próximas del mismo cliente aunque el monto no coincida.
+     */
+    public function candidatos($c): array
+    {
+        $fecha = $c->fecha ?: substr((string) $c->recibido_at, 0, 10);
+        $cands = $c->monto ? array_merge($this->ventas($c, $fecha), $this->abonosExtra($c, $fecha)) : [];
+        $ids = array_column($cands, 'venta_id');
+        if ($c->nombre) {
+            $filas = DB::table('ventas as v')->join('reservas as r', 'r.id', '=', 'v.id_reserva')
+                ->join('clientes as cl', 'cl.id', '=', 'r.cliente_id')
+                ->whereBetween('r.fecha_visita', [date('Y-m-d', strtotime($fecha . ' -10 days')), date('Y-m-d', strtotime($fecha . ' +120 days'))])
+                ->select('v.id', 'v.abono_programa', 'v.diferencia_programa', 'r.fecha_visita', 'cl.nombre_cliente')
+                ->orderBy('r.fecha_visita')->limit(400)->get();
+            foreach ($filas as $v) {
+                if (in_array($v->id, $ids) || !self::mismoNombre($c->nombre, $v->nombre_cliente)) {
+                    continue;
+                }
+                $campo = abs(strtotime($v->fecha_visita) - strtotime($fecha)) <= 2 * 86400 ? 'diferencia' : 'abono';
+                $cands[] = ['venta_id' => $v->id, 'campo' => $campo, 'puntos' => 1,
+                            'motivo' => "venta #{$v->id} de {$v->nombre_cliente}, visita {$v->fecha_visita} (abono $" . number_format($v->abono_programa, 0, ',', '.')
+                                . ', diferencia $' . number_format($v->diferencia_programa, 0, ',', '.') . ')'];
+            }
+        }
+        usort($cands, function ($a, $b) {
+            return $b['puntos'] <=> $a['puntos'];
+        });
+        return array_slice($cands, 0, 6);
+    }
+
     private function comprobantes($c, string $fecha): array
     {
         if (!Schema::hasTable('comprobantes_revision')) {

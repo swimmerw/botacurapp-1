@@ -14,3 +14,12 @@ Route::prefix('finanzas/correos')->name('finanzas.correos.')->group(function () 
     Route::post('/{id}/pagar-semana', 'FinanzasCorreoController@pagarSemana')->name('pagar_semana');
     Route::post('/{id}/estado', 'FinanzasCorreoController@estado')->name('estado');
 });
+
+// Egresos › Clasificar: bandeja de movimientos del banco por asociar, registrar o clasificar
+Route::prefix('finanzas/clasificar')->name('finanzas.clasificar.')->group(function () {
+    Route::get('/', 'FinanzasClasificarController@index')->name('index');
+    Route::post('/{id}/venta', 'FinanzasClasificarController@venta')->name('venta');
+    Route::post('/{id}/marcar', 'FinanzasClasificarController@marcar')->name('marcar');
+    Route::post('/{id}/egreso', 'FinanzasClasificarController@egreso')->name('egreso');
+    Route::post('/{id}/deshacer', 'FinanzasClasificarController@deshacer')->name('deshacer');
+});

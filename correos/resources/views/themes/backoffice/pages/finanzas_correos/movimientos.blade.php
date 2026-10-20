@@ -24,6 +24,7 @@
             <p class="grey-text" style="margin:0;font-size:.85rem">Lo que entró y salió según los avisos de los bancos, cruzado con reservas, sueldos y egresos.</p>
         </div>
         <div class="col s12 m5 right-align">
+            <a href="{{ route('backoffice.finanzas.clasificar.index') }}" class="btn-flat"><i class="material-icons left">rule</i>Clasificar</a>
             <a href="{{ route('backoffice.finanzas.correos.index') }}" class="btn-flat"><i class="material-icons left">mark_email_read</i>Correos</a>
             <form method="POST" action="{{ route('backoffice.finanzas.correos.leer') }}" style="display:inline">@csrf
                 <button class="btn waves-effect blue darken-1"><i class="material-icons left">refresh</i>Leer y cruzar</button>

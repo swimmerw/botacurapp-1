@@ -116,7 +116,7 @@ class FinanzasCorreoController extends Controller
         DB::table('fin_correos')->where('id', $id)->update([
             'venta_id' => $venta->id, 'campo' => $campo, 'estado' => 'calzado',
             'nota' => 'Asociado a mano por ' . auth()->user()->name, 'updated_at' => now(),
-        ]);
+        ] + self::marcaClasificado('reserva'));
         return back()->with('success', "Abono asociado a la venta #{$venta->id}.");
     }
 
@@ -135,7 +135,7 @@ class FinanzasCorreoController extends Controller
             'pago_egreso_id' => $request->clase === 'egreso' ? $request->ref : null,
             'nota' => mb_substr(($request->input('label') ?: ucfirst($request->clase) . ' #' . $request->ref) . ' · asociado por ' . auth()->user()->name, 0, 191),
             'updated_at' => now(),
-        ]);
+        ] + self::marcaClasificado());
         return back()->with('success', 'Salida asociada.');
     }
 
@@ -160,7 +160,7 @@ class FinanzasCorreoController extends Controller
             'estado' => 'calzado', 'vinculo' => 'sueldo', 'sueldo_pagado_id' => $spId,
             'nota' => mb_substr("Remuneración de {$persona->name}, {$sem['etiqueta']} · marcada por " . auth()->user()->name, 0, 191),
             'updated_at' => now(),
-        ]);
+        ] + self::marcaClasificado());
         return back()->with('success', "{$sem['etiqueta']} de {$persona->name} quedó Pagada en Remuneraciones.");
     }
 
@@ -211,6 +211,15 @@ class FinanzasCorreoController extends Controller
 
         return view('themes.backoffice.pages.finanzas_correos.movimientos',
             compact('dias', 'res', 'cuentas', 'ambito', 'desde', 'hasta'));
+    }
+
+    /** Marca de "clasificado a mano" (si la columna ya existe), para la pestaña Clasificados y Deshacer. */
+    public static function marcaClasificado(?string $clasificacion = null): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('fin_correos', 'clasificado_at')) {
+            return [];
+        }
+        return array_filter(['clasificacion' => $clasificacion, 'clasificado_por' => auth()->id(), 'clasificado_at' => now()]);
     }
 
     /** ¿El movimiento es de las cuentas de Botacura o de la cuenta personal? */

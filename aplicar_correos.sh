@@ -12,7 +12,7 @@ SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parc
 [ -n "$SHA" ] || SHA=parches-finanzas
 U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/$SHA/correos
 echo "Version: ${SHA:0:7}"
-F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/ConciliadorSalidas.php app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php database/migrations/2026_10_19_220000_add_buzon_to_fin_correos.php database/migrations/2026_10_20_100000_add_vinculos_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_badge.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_dia.blade.php resources/views/themes/backoffice/pages/finanzas_correos/movimientos.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php app/Mail/GiftCardMailable.php"
+F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/ConciliadorSalidas.php app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php app/Http/Controllers/FinanzasClasificarController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php database/migrations/2026_10_19_220000_add_buzon_to_fin_correos.php database/migrations/2026_10_20_100000_add_vinculos_to_fin_correos.php database/migrations/2026_10_20_110000_add_clasificacion_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_badge.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_dia.blade.php resources/views/themes/backoffice/pages/finanzas_correos/movimientos.blade.php resources/views/themes/backoffice/pages/finanzas_correos/clasificar.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php app/Mail/GiftCardMailable.php"
 TS=$(date +%Y%m%d%H%M)
 for f in $F; do
   mkdir -p "$(dirname "$f")"
@@ -72,7 +72,7 @@ if [ -f $C ] && [ -f $V ]; then
     && php -l $C >/dev/null || { cp $C.bak.$TS $C; cp $V.bak.$TS $V; echo "AVISO: Reservas del dia sin cambios (restaurado)"; }
 fi
 
-for m in 2026_10_19_200000_create_fin_correos_table 2026_10_19_210000_add_seguridad_to_fin_correos 2026_10_19_220000_add_buzon_to_fin_correos 2026_10_20_100000_add_vinculos_to_fin_correos; do
+for m in 2026_10_19_200000_create_fin_correos_table 2026_10_19_210000_add_seguridad_to_fin_correos 2026_10_19_220000_add_buzon_to_fin_correos 2026_10_20_100000_add_vinculos_to_fin_correos 2026_10_20_110000_add_clasificacion_to_fin_correos; do
   php artisan migrate --path=database/migrations/$m.php --force | grep -v "Nothing to migrate" || true
 done
 
