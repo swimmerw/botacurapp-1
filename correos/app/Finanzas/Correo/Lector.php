@@ -90,6 +90,10 @@ class Lector
             return self::fechaPorDefecto($d, $fechaCorreo);
         }
 
+        if ($banco === 'Mercado Pago' && strpos(self::dominio($r), 'mercadolibre') !== false
+            && !preg_match('/(transferencia|dinero|te envi[óo]|te transfiri[óo]|abono)/iu', $a)) {
+            return $d; // avisos de compras y despachos de Mercado Libre: no son movimientos de dinero
+        }
         if ($banco && self::esPublicidad($r)) {
             return $d; // publicidad del banco: no mueve dinero
         }
