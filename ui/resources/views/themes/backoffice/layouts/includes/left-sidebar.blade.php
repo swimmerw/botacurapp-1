@@ -74,6 +74,7 @@
             ['Roles', 'admin_panel_settings', 'backoffice.role.index', [], $rol('admin', 'jefe_local'), 'backoffice.role.*'],
             ['Permisos', 'key', 'backoffice.permission.index', [], $rol('admin', 'jefe_local'), 'backoffice.permission.*'],
             ['Bot de WhatsApp', 'smart_toy', 'backoffice.bot-configuracion.index', [], $rol('admin'), 'backoffice.bot-configuracion.*'],
+            ['Auditoría', 'policy', 'backoffice.auditoria.index', [], $rol('admin'), 'backoffice.auditoria.*'],
         ]],
     ];
 
