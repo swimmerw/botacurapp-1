@@ -58,6 +58,7 @@ body {
 #header nav .material-icons,
 #header nav a,
 #header nav .logo-text { color: #ffffff !important; }
+#header .brand-logo img { filter: brightness(0) invert(1); }
 #header .header-search-wrapper i { color: rgba(255,255,255,.75) !important; }
 #header .header-search-input {
   background: rgba(255,255,255,.12) !important;
@@ -248,7 +249,10 @@ td, th { padding: 10px 8px; }
 .fc .fc-button-primary { background: var(--bx-marca-osc); border-color: var(--bx-marca-osc); text-transform: none; border-radius: 8px; box-shadow: none; }
 .fc .fc-button-primary:not(:disabled):hover { background: var(--bx-marca); border-color: var(--bx-marca); }
 .fc .fc-button-primary:not(:disabled).fc-button-active, .fc .fc-button-primary:disabled { background: var(--bx-marca); border-color: var(--bx-marca); opacity: 1; }
-.fc .fc-toolbar h2 { font-size: 1.35rem; font-weight: 600; color: var(--bx-marca-osc); text-transform: capitalize; }
+.fc .fc-toolbar h2 { font-size: 1.35rem; font-weight: 600; color: var(--bx-marca-osc); text-transform: none; }
+.fc .fc-toolbar h2::first-letter { text-transform: uppercase; }
+.fc table > thead > tr { background: transparent; border-bottom: 0; }
+.fc .fc-head table > thead > tr { background: var(--bx-menta); }
 .fc th, .fc .fc-day-header { background: var(--bx-menta); color: var(--bx-marca-osc); font-weight: 600; padding: 6px 0; }
 .fc-unthemed td.fc-today { background: var(--bx-crema) !important; }
 .fc-event { border-radius: 6px; padding: 1px 4px; font-size: 12px; }
