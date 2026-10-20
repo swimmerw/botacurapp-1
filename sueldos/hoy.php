@@ -20,3 +20,7 @@ foreach ($filas as $c) {
 }
 $c = DB::table('fin_correos')->where('cuenta', 'like', '%23674351')->get();
 foreach ($c as $x) echo "  Café: #{$x->id} {$x->fecha} \$" . number_format((int) $x->monto, 0, ',', '.') . " · {$x->estado}/" . ($x->vinculo ?: '-') . "\n";
+echo "Último aviso guardado por buzón:\n";
+foreach (DB::table('fin_correos')->selectRaw('buzon, max(recibido_at) ultimo, sum(recibido_at >= ?) hoy', [date('Y-m-d 00:00:00')])->groupBy('buzon')->get() as $b) {
+    echo '  ' . ($b->buzon ?: '(sin buzón)') . ": último {$b->ultimo} · hoy {$b->hoy}\n";
+}
