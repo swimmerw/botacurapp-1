@@ -44,6 +44,7 @@ curl -fsSL "$U/ui/$C" -o $C || { echo "ERROR bajando la hoja de estilos"; cp $M.
 for f in resources/views/themes/backoffice/pages/egresos_panel/_estilo.blade.php resources/views/themes/backoffice/pages/egresos_panel/mes.blade.php resources/views/themes/backoffice/pages/finanzas_correos/clasificar.blade.php; do
   [ -f "$f" ] && cp "$f" "$f.bak.$TS" && curl -fsSL "$U/correos/$f" -o "$f"
 done
+sed -i "s/botacura-ui.css') }}?v=[0-9]*/botacura-ui.css') }}?v=3/" $H
 if ! grep -q "botacura-ui.css" $H; then
   cp $H $H.bak.$TS
   python3 - <<'PY'

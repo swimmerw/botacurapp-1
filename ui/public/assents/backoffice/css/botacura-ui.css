@@ -157,19 +157,26 @@ a.bx-abrir.btn-floating { background: var(--bx-tinta) !important; box-shadow: 0 
 
 /* ---------- Botones ---------- */
 /* Botón sin color propio = verde Botacura (las clases de color de Materialize, como .red, siguen mandando) */
-.btn, .btn-large, .btn-small { background-color: var(--bx-marca); }
+.btn, .btn-large, .btn-small, .btn-floating { background-color: var(--bx-marca); }
 .btn:focus, .btn-large:focus, .btn-small:focus { background-color: var(--bx-marca-osc); }
-.breadcrumbs a, #breadcrumbs-wrapper a { color: var(--bx-marca) !important; }
-.btn, .btn-large, .btn-small, .btn-flat {
+.breadcrumbs a:not(.btn), #breadcrumbs-wrapper a:not(.btn):not(.btn-floating):not(.btn-small) { color: var(--bx-marca) !important; }
+#breadcrumbs-wrapper .btn, #breadcrumbs-wrapper .btn i { color: #fff !important; }
+.btn:not(.btn-floating), .btn-large:not(.btn-floating), .btn-small:not(.btn-floating), .btn-flat {
   border-radius: var(--bx-radio);
   text-transform: none;
   font-weight: 600;
   letter-spacing: 0;
   box-shadow: none !important;
 }
-.btn, .btn-small { height: 38px; line-height: 38px; padding: 0 16px; }
-.btn-small { height: 32px; line-height: 32px; padding: 0 12px; font-size: 13px; }
-.btn-large { height: 46px; line-height: 46px; }
+.btn:not(.btn-floating) { height: 38px; line-height: 38px; padding: 0 16px; }
+.btn-small:not(.btn-floating) { height: 32px; line-height: 32px; padding: 0 12px; font-size: 13px; }
+.btn-large:not(.btn-floating) { height: 46px; line-height: 46px; }
+/* Íconos de acción (ver, editar, borrar…): círculos parejos, separados y alineados */
+.btn-floating { border-radius: 50% !important; text-transform: none; }
+.btn-floating.btn-small { width: 32px !important; height: 32px !important; line-height: 32px !important; padding: 0 !important; }
+.btn-floating.btn-small i { line-height: 32px !important; font-size: 18px !important; }
+td .btn-floating, td .btn-small, td .btn { margin: 2px 3px 2px 0; vertical-align: middle; }
+td:last-child { white-space: nowrap; }
 .btn:hover, .btn-large:hover, .btn-small:hover { filter: brightness(.95); }
 .btn i.left, .btn-small i.left { margin-right: 8px; }
 .btn-floating { box-shadow: 0 2px 8px rgba(0,0,0,.14) !important; }
@@ -233,8 +240,10 @@ td, th { padding: 10px 8px; }
 @media only screen and (max-width: 600px) {
   /* 16 px evita que el celular haga zoom al escribir */
   input, select, textarea, .select-wrapper input.select-dropdown { font-size: 16px !important; }
-  .btn, .btn-large { height: 44px; line-height: 44px; }
-  .btn-small { height: 38px; line-height: 38px; }
+  .btn:not(.btn-floating), .btn-large:not(.btn-floating) { height: 44px; line-height: 44px; }
+  .btn-small:not(.btn-floating) { height: 38px; line-height: 38px; }
+  .btn-floating.btn-small { width: 38px !important; height: 38px !important; line-height: 38px !important; }
+  .btn-floating.btn-small i { line-height: 38px !important; }
   /* Las tablas anchas se desplazan de lado en vez de romper la página (los menús desplegables no se cortan) */
   table:not(.responsive-table) { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .card .card-content { padding: 14px; }
