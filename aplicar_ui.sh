@@ -44,14 +44,14 @@ curl -fsSL "$U/ui/$C" -o $C || { echo "ERROR bajando la hoja de estilos"; cp $M.
 for f in resources/views/themes/backoffice/pages/egresos_panel/_estilo.blade.php resources/views/themes/backoffice/pages/egresos_panel/mes.blade.php resources/views/themes/backoffice/pages/finanzas_correos/clasificar.blade.php; do
   [ -f "$f" ] && cp "$f" "$f.bak.$TS" && curl -fsSL "$U/correos/$f" -o "$f"
 done
-sed -i "s/botacura-ui.css') }}?v=[0-9]*/botacura-ui.css') }}?v=3/" $H
+sed -i "s/botacura-ui.css') }}?v=[0-9]*/botacura-ui.css') }}?v=4/" $H
 if ! grep -q "botacura-ui.css" $H; then
   cp $H $H.bak.$TS
   python3 - <<'PY'
 p='resources/views/themes/backoffice/layouts/includes/head.blade.php'; s=open(p).read()
 add = ('<link rel="preconnect" href="https://fonts.googleapis.com">\n'
        '<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300,0,0&display=swap" rel="stylesheet">\n'
-       '<link href="{{ asset(\'assents/backoffice/css/botacura-ui.css\') }}?v=1" rel="stylesheet">\n')
+       '<link href="{{ asset(\'assents/backoffice/css/botacura-ui.css\') }}?v=4" rel="stylesheet">\n')
 k = "custom.css') }}\" rel=\"stylesheet\">"
 i = s.find(k)
 s = s[:i+len(k)] + "\n" + add + s[i+len(k):] if i >= 0 else s + "\n" + add
@@ -63,6 +63,12 @@ HD=resources/views/themes/backoffice/layouts/includes/header.blade.php
 if grep -q 'href="index.html"' $HD; then
   cp $HD $HD.bak.$TS
   sed -i "s#href=\"index.html\"#href=\"{{ route('backoffice.admin.menu') }}\"#" $HD
+fi
+# El botón "Acciones" de cada página abre su menú debajo del botón (antes lo tapaba)
+FT=resources/views/themes/backoffice/layouts/includes/foot.blade.php
+if ! grep -q "belowOrigin" $FT; then
+  cp $FT $FT.bak.$TS
+  sed -i '0,/hover: false,/s//hover: false, belowOrigin: true,/' $FT
 fi
 php artisan view:clear >/dev/null
 echo "----"

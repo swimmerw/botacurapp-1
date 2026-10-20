@@ -109,15 +109,6 @@
 @endphp
 <aside id="left-sidebar-nav">
     <ul class="side-nav fixed leftside-navigation bx-nav" id="slide-out">
-        <li class="bx-marca">
-            <a href="{{ route('backoffice.admin.menu') }}" class="bx-logo" aria-label="Inicio">
-                <span class="bx-logo-ic"><span class="ms" aria-hidden="true">forest</span></span>
-                <span>
-                    <span class="bx-logo-t">BOTACURA</span>
-                    <span class="bx-logo-s">{{ $u->name }}</span>
-                </span>
-            </a>
-        </li>
         <li class="bx-buscar">
             <label>
                 <span class="ms" aria-hidden="true">search</span>
@@ -172,6 +163,30 @@
     </form>
 </aside>
 <script>
+    // Calendarios en el celular: vista de lista, alto automático y barra simple (vale para todos los FullCalendar)
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!window.FullCalendar || !FullCalendar.Calendar || FullCalendar.Calendar.__bx) { return; }
+        var Orig = FullCalendar.Calendar;
+        var Nuevo = function (el, opts) {
+            opts = opts || {};
+            if (window.innerWidth < 700) {
+                opts = Object.assign({}, opts);
+                var conLista = (opts.plugins || []).some(function (p) { return p === 'list' || (p && p.name === 'list'); });
+                var vista = opts.defaultView || opts.initialView || 'dayGridMonth';
+                if (conLista && vista === 'dayGridMonth') { opts.defaultView = 'listMonth'; }
+                opts.height = 'auto';
+                if (opts.header) {
+                    opts.header = { left: 'prev,next', center: 'title', right: conLista ? 'listMonth,dayGridMonth' : 'today' };
+                }
+                opts.buttonText = Object.assign({ listMonth: 'Lista', dayGridMonth: 'Mes', today: 'Hoy' }, opts.buttonText || {}, { listMonth: 'Lista' });
+            }
+            return new Orig(el, opts);
+        };
+        Nuevo.prototype = Orig.prototype;
+        Nuevo.__bx = true;
+        FullCalendar.Calendar = Nuevo;
+    });
+
     // Filtro del menú: muestra solo las opciones que coinciden y abre su sección
     (function () {
         var f = document.getElementById('bx-filtro');
