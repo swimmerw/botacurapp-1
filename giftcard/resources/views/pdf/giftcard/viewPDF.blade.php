@@ -4,6 +4,7 @@
     $acento = '#037A61';
     $conDuracion = ['masaje', 'tinaja', 'sauna'];
     $personas = (int) ($gc->cantidad_personas ?? 0);
+    $zoom = isset($zoom) ? (float) $zoom : 1.0; // 1.3 cuando el wkhtmltopdf del servidor achica la página
 @endphp
 <!DOCTYPE html>
 <html lang="es">
@@ -17,7 +18,7 @@
     @font-face { font-family: 'GCSansMedium'; src: url("{{ $f('assents/fonts/giftcard/manrope-500.ttf') }}") format('truetype'); }
     @font-face { font-family: 'GCSansBold'; src: url("{{ $f('assents/fonts/giftcard/manrope-700.ttf') }}") format('truetype'); }
 
-    html, body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0; background: #F4EFE4; }
     body { font-family: 'GCSans', Arial, sans-serif; color: #1D2A25; }
     .hoja { position: relative; width: 1123px; height: 793px; overflow: hidden; background: #F4EFE4; }
 
@@ -48,7 +49,7 @@
 </style>
 </head>
 <body>
-<div class="hoja">
+<div class="hoja" @if ($zoom != 1.0) style="zoom: {{ $zoom }};" @endif>
     <div class="foto">
         <img class="fondo" src="{{ $f('images/gc/giftcard-foto.jpg') }}" alt="">
         <img class="logo" src="{{ $f('images/gc/logo-crema.png') }}" alt="Botacura · Cajón del Maipo">
