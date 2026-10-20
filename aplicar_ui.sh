@@ -57,6 +57,12 @@ s = s[:i+len(k)] + "\n" + add + s[i+len(k):] if i >= 0 else s + "\n" + add
 open(p, 'w').write(s)
 PY
 fi
+# El logo de la barra superior apuntaba a index.html (404)
+HD=resources/views/themes/backoffice/layouts/includes/header.blade.php
+if grep -q 'href="index.html"' $HD; then
+  cp $HD $HD.bak.$TS
+  sed -i "s#href=\"index.html\"#href=\"{{ route('backoffice.admin.menu') }}\"#" $HD
+fi
 php artisan view:clear >/dev/null
 echo "----"
 echo "Listo. Recarga BotacurApp (Ctrl+Shift+R). Para volver atrás: curl -sL $U/aplicar_ui.sh | bash -s revertir"

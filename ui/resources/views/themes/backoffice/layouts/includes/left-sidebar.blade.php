@@ -20,14 +20,21 @@
 
     // [texto, ícono, ruta, parámetros, visible, patrón de ruta activa, id del texto]
     $grupos = [
+        // Inicio: un solo botón directo al panel
         ['Inicio', 'space_dashboard', [
-            ['Panel', 'monitoring', 'backoffice.admin.show', [], $rol('admin', 'anfitriona', 'jefe_local'), 'backoffice.admin.show'],
-            ['Mis accesos', 'apps', 'backoffice.admin.menu', [], true, 'backoffice.admin.menu'],
+            ['Inicio', 'space_dashboard', $rol('admin', 'anfitriona', 'jefe_local') ? 'backoffice.admin.show' : 'backoffice.admin.menu', [], true, 'backoffice.admin.*'],
+        ], 'directo'],
+        ['Día a día', 'today', [
+            ['Reservas del día', 'fact_check', 'backoffice.finanzas.reservas_dia', [], $rol('admin'), 'backoffice.finanzas.reservas_dia*'],
+            ['Cruce de correos', 'mark_email_read', 'backoffice.finanzas.correos.index', [], $fin, 'backoffice.finanzas.correos.index'],
+            ['Bot de WhatsApp', 'smart_toy', 'backoffice.bot-configuracion.index', [], $rol('admin'), 'backoffice.bot-configuracion.*'],
         ]],
         ['Reservas', 'event', [
             ['Registro del día', 'today', $esGarzonOAnfitriona ? 'backoffice.reservas.registro' : 'backoffice.reservas.registros',
                 $esGarzonOAnfitriona ? ['fecha' => now()->format('d-m-Y')] : [], $rol('admin', 'anfitriona', 'jefe_local', 'garzon'), 'backoffice.reservas.registro*'],
             ['Horarios', 'calendar_month', 'backoffice.reserva.index', [], $rol('admin', 'anfitriona', 'jefe_local'), 'backoffice.reserva.index'],
+            ['Disponibilidad de fechas', 'event_available', 'backoffice.calendario', [], $rol('admin', 'anfitriona', 'jefe_local'), 'backoffice.calendario*'],
+            ['Ventas botacura.cl', 'shopping_cart', 'backoffice.compras.botacura', [], $rol('admin', 'jefe_local'), 'backoffice.compras.botacura'],
             ['Clientes', 'group', 'backoffice.cliente.index', [], $rol('admin', 'jefe_local'), 'backoffice.cliente.*'],
             ['Cotizaciones', 'request_quote', 'backoffice.cotizacion.index', [], $rol('admin', 'jefe_local'), 'backoffice.cotizacion.*'],
             ['Gift cards', 'redeem', 'backoffice.giftcards.index', [], $rol('admin', 'jefe_local'), 'backoffice.giftcards.*'],
@@ -52,19 +59,20 @@
             ['Insumos', 'grocery', 'backoffice.insumo.index', [], $rol('admin', 'cocina', 'jefe_local'), 'backoffice.insumo.*'],
         ]],
         ['Finanzas', 'account_balance_wallet', [
+            ['Ingresos diarios', 'payments', 'backoffice.admin.ingresos', [], $rol('admin'), 'backoffice.admin.ingresos*'],
             ['Egresos del mes', 'insights', 'backoffice.egreso.mes', [now()->year, now()->month], $fin, 'backoffice.egreso.*'],
             ['Por pagar', 'receipt_long', 'backoffice.finanzas.deudas.index', [], $fin, 'backoffice.finanzas.deudas.*'],
             ['Clasificar', 'rule', 'backoffice.finanzas.clasificar.index', [], $fin, 'backoffice.finanzas.clasificar.*'],
             ['Movimientos', 'swap_vert', 'backoffice.finanzas.correos.movimientos', [], $fin, 'backoffice.finanzas.correos.movimientos'],
-            ['Correos bancarios', 'mark_email_read', 'backoffice.finanzas.correos.index', [], $fin, 'backoffice.finanzas.correos.index'],
-            ['Reservas del día', 'fact_check', 'backoffice.finanzas.reservas_dia', [], $rol('admin'), 'backoffice.finanzas.reservas_dia*'],
             ['Utilidad', 'trending_up', 'backoffice.finanzas.utilidad', [], $rol('admin'), 'backoffice.finanzas.utilidad'],
+            ['Resumen anual', 'calendar_view_month', 'backoffice.finanzas.resumen.anual', [], $rol('admin'), 'backoffice.finanzas.resumen.*'],
             ['F29 estimado', 'calculate', 'backoffice.impuesto.index', [], $rol('admin'), 'backoffice.impuesto.*'],
             ['Informes', 'bar_chart', 'backoffice.informes.index', [], $rol('admin'), 'backoffice.informes.*'],
         ]],
         ['Equipo', 'badge', [
             ['Turnos', 'schedule', 'backoffice.asignacion.index', [], $rol('admin', 'jefe_local'), 'backoffice.asignacion.*'],
-            ['Remuneraciones', 'payments', 'backoffice.sueldos.index', [], $rol('admin'), 'backoffice.sueldos.*'],
+            ['Asistencia', 'how_to_reg', 'backoffice.asistencia.index', [], $rol('admin', 'jefe_local'), 'backoffice.asistencia.*'],
+            ['Remuneraciones', 'request_page', 'backoffice.sueldos.index', [], $rol('admin'), 'backoffice.sueldos.*'],
             ['Mis pagos', 'account_balance_wallet', 'backoffice.sueldo.view', [$u], $staff && !$rol('admin'), 'backoffice.sueldo.view'],
             ['Mis pagos', 'account_balance_wallet', 'backoffice.sueldo.view_maso', [$u], $rol('masoterapeuta') && !$rol('admin'), 'backoffice.sueldo.view_maso'],
             ['Datos bancarios', 'account_balance', 'backoffice.datos-bancarios.index', [], $rol('admin', 'jefe_local'), 'backoffice.datos-bancarios.*'],
@@ -73,7 +81,6 @@
             ['Usuarios', 'manage_accounts', 'backoffice.user.index', [], $rol('admin', 'jefe_local'), 'backoffice.user.*'],
             ['Roles', 'admin_panel_settings', 'backoffice.role.index', [], $rol('admin', 'jefe_local'), 'backoffice.role.*'],
             ['Permisos', 'key', 'backoffice.permission.index', [], $rol('admin', 'jefe_local'), 'backoffice.permission.*'],
-            ['Bot de WhatsApp', 'smart_toy', 'backoffice.bot-configuracion.index', [], $rol('admin'), 'backoffice.bot-configuracion.*'],
             ['Auditoría', 'policy', 'backoffice.auditoria.index', [], $rol('admin'), 'backoffice.auditoria.*'],
         ]],
     ];
@@ -93,7 +100,7 @@
             $items[] = ['t' => $it[0], 'i' => $it[1], 'href' => route($it[2], $it[3]), 'activo' => $activo, 'id' => $it[6] ?? null];
         }
         if ($items) {
-            $menu[] = ['t' => $g[0], 'i' => $g[1], 'items' => $items, 'abierto' => $abierto];
+            $menu[] = ['t' => $g[0], 'i' => $g[1], 'items' => $items, 'abierto' => $abierto, 'directo' => ($g[3] ?? null) === 'directo'];
             $totalItems += count($items);
         }
     }
@@ -118,6 +125,15 @@
             </label>
         </li>
         @foreach($menu as $g)
+            @if($g['directo'])
+            <li class="bx-grupo">
+                <a href="{{ $g['items'][0]['href'] }}" class="bx-directo {{ $g['items'][0]['activo'] ? 'activo' : '' }}" @if($g['items'][0]['activo']) aria-current="page" @endif>
+                    <span class="ms" aria-hidden="true">{{ $g['i'] }}</span>
+                    <span class="bx-grupo-t">{{ $g['t'] }}</span>
+                </a>
+            </li>
+            @continue
+            @endif
             <li class="bx-grupo">
                 <details {{ ($g['abierto'] || $todoAbierto) ? 'open' : '' }}>
                     <summary>

@@ -14,6 +14,9 @@
   --bx-verde: #1b7f5b;
   --bx-verde-osc: #145f44;
   --bx-verde-suave: #eef3f0;
+  --bx-marca: #039b7b;      /* verde del logo */
+  --bx-marca-osc: #0e5f49;  /* para fondos con texto blanco */
+  --bx-ambar: #e8a33d;      /* contraste cálido: avisos y contadores */
   --bx-radio: 10px;
   --bx-nav: 264px;
 }
@@ -47,6 +50,7 @@ body {
 #header nav.gradient-45deg-light-blue-cyan {
   background: var(--bx-blanco) !important;
   box-shadow: none;
+  border-top: 3px solid var(--bx-marca);
   border-bottom: 1px solid var(--bx-borde);
   color: var(--bx-tinta);
 }
@@ -81,7 +85,7 @@ body {
   display: flex; align-items: center; gap: 10px; height: auto; padding: 4px 8px 14px; margin: 0; color: var(--bx-tinta);
 }
 .bx-logo-ic {
-  width: 34px; height: 34px; border-radius: 9px; background: var(--bx-tinta); color: #f4efe4;
+  width: 34px; height: 34px; border-radius: 9px; background: var(--bx-marca-osc); color: #f4efe4;
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .bx-logo-t { display: block; font-weight: 700; letter-spacing: .08em; font-size: 14px; line-height: 1.2; }
@@ -101,7 +105,16 @@ body {
 }
 .bx-grupo details > summary::-webkit-details-marker { display: none; }
 .bx-grupo details > summary:hover { background: var(--bx-fondo); }
-.bx-grupo details > summary .ms { color: var(--bx-tinta-2); }
+.bx-grupo details > summary .ms { color: var(--bx-marca); }
+.bx-grupo details[open] > summary { color: var(--bx-marca-osc); }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-directo {
+  display: flex; align-items: center; gap: 12px; height: 40px; line-height: 40px; padding: 0 10px; margin: 0 0 4px;
+  border-radius: var(--bx-radio); font-size: 14px; font-weight: 600; color: var(--bx-tinta);
+}
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-directo .ms { color: var(--bx-marca); margin: 0; }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-directo:hover { background: var(--bx-fondo); }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-directo.activo { background: var(--bx-marca-osc); color: #fff; }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-directo.activo .ms { color: #bfe8d9; }
 .bx-grupo-t { flex: 1; }
 .bx-chev { font-size: 18px !important; color: #8a938e !important; transition: transform .15s; }
 .bx-grupo details[open] > summary .bx-chev { transform: rotate(180deg); }
@@ -112,15 +125,17 @@ body {
 }
 #left-sidebar-nav ul.side-nav.bx-nav a.bx-item .ms { font-size: 18px; color: inherit; margin: 0; }
 #left-sidebar-nav ul.side-nav.bx-nav a.bx-item:hover { background: var(--bx-fondo); color: var(--bx-tinta); }
-#left-sidebar-nav ul.side-nav.bx-nav a.bx-item.activo { background: var(--bx-verde-suave); color: var(--bx-verde-osc); font-weight: 700; }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-item.activo { background: var(--bx-marca-osc); color: #ffffff; font-weight: 700; }
+#left-sidebar-nav ul.side-nav.bx-nav a.bx-item.activo .ms { color: #bfe8d9; }
+.bx-grupo ul { border-left-color: #d5ebe2 !important; }
 .bx-item-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bx-item-t .badge, .bx-item-t .new.badge { float: none; margin-left: 6px; border-radius: 999px; font-size: 11px; }
+.bx-item-t .badge, .bx-item-t .new.badge { float: none; margin-left: 6px; border-radius: 999px; font-size: 11px; background: var(--bx-ambar) !important; color: #3a2604 !important; }
 .bx-pie {
   margin-top: auto !important; display: flex !important; align-items: center; gap: 10px;
   padding: 12px 6px 14px !important; border-top: 1px solid var(--bx-borde); position: sticky; bottom: 0; background: var(--bx-blanco) !important;
 }
 .bx-avatar {
-  width: 32px; height: 32px; border-radius: 999px; background: var(--bx-verde-suave); color: var(--bx-verde-osc);
+  width: 32px; height: 32px; border-radius: 999px; background: var(--bx-ambar); color: #3a2604;
   display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
 }
 .bx-pie-t { flex: 1; min-width: 0; font-size: 13px; color: var(--bx-tinta); overflow: hidden; text-overflow: ellipsis; }
@@ -141,6 +156,10 @@ a.bx-abrir.btn-floating { background: var(--bx-tinta) !important; box-shadow: 0 
 .breadcrumbs-title { font-weight: 500; }
 
 /* ---------- Botones ---------- */
+/* Botón sin color propio = verde Botacura (las clases de color de Materialize, como .red, siguen mandando) */
+.btn, .btn-large, .btn-small { background-color: var(--bx-marca); }
+.btn:focus, .btn-large:focus, .btn-small:focus { background-color: var(--bx-marca-osc); }
+.breadcrumbs a, #breadcrumbs-wrapper a { color: var(--bx-marca) !important; }
 .btn, .btn-large, .btn-small, .btn-flat {
   border-radius: var(--bx-radio);
   text-transform: none;
