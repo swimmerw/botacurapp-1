@@ -23,3 +23,15 @@ Route::prefix('finanzas/clasificar')->name('finanzas.clasificar.')->group(functi
     Route::post('/{id}/egreso', 'FinanzasClasificarController@egreso')->name('egreso');
     Route::post('/{id}/deshacer', 'FinanzasClasificarController@deshacer')->name('deshacer');
 });
+
+// Egresos: panel del mes (la ruta egreso.mes de web.php apunta a EgresosPanelController@mes) y Por pagar
+Route::post('finanzas/egresos/categorizar-proveedor', 'EgresosPanelController@categorizarProveedor')->name('finanzas.egresos.categorizar');
+Route::prefix('finanzas/por-pagar')->name('finanzas.deudas.')->group(function () {
+    Route::get('/', 'FinanzasDeudasController@index')->name('index');
+    Route::post('/', 'FinanzasDeudasController@store')->name('store');
+    Route::post('/{id}', 'FinanzasDeudasController@update')->name('update');
+    Route::post('/{id}/abonar', 'FinanzasDeudasController@pago')->name('pago');
+    Route::post('/{id}/saldar', 'FinanzasDeudasController@saldar')->name('saldar');
+    Route::post('/{id}/sacar', 'FinanzasDeudasController@anular')->name('anular');
+    Route::post('/abono/{pagoId}/quitar', 'FinanzasDeudasController@quitarPago')->name('quitar_pago');
+});

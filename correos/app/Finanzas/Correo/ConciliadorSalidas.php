@@ -27,14 +27,26 @@ class ConciliadorSalidas
             return ['estado' => 'calzado', 'vinculo' => 'traspaso', 'nota' => 'Traspaso entre cuentas de Botacura'];
         }
         if ($c->tipo === 'cuenta') {
+            if (\App\Finanzas\Egresos\Deudas::hay()) {
+                // La cuenta queda en "Por pagar"; los abonos del banco la van bajando
+                app(\App\Finanzas\Egresos\Deudas::class)->desdeCuenta($c);
+                return [];
+            }
             return $this->cuentaPagada($c);
         }
         if (!$c->monto) {
             return $c->tipo === 'personal' ? [] : ['estado' => 'revisar', 'nota' => 'Sin monto legible'];
         }
 
-        // ¿Paga una cuenta que llegó por correo?
-        if ($c->proveedor && ($cta = $this->cuentaAbiertaPara($c))) {
+        // ¿Es un abono a algo por pagar (cuenta del correo, deuda, crédito)?
+        if (\App\Finanzas\Egresos\Deudas::hay()) {
+            $d = app(\App\Finanzas\Egresos\Deudas::class)->paraSalida($c);
+            if ($d) {
+                return ['estado' => 'calzado', 'vinculo' => 'deuda', 'deuda_id' => $d->id,
+                        'categoria_id' => $d->categoria_id, 'subcategoria_id' => $d->subcategoria_id,
+                        'nota' => 'Abono a ' . $d->nombre];
+            }
+        } elseif ($c->proveedor && ($cta = $this->cuentaAbiertaPara($c))) {
             return ['estado' => 'calzado', 'vinculo' => 'cuenta', 'correo_id' => $cta->id,
                     'nota' => "Paga la cuenta {$cta->proveedor} recibida el " . date('d-m', strtotime($cta->recibido_at))];
         }
@@ -47,7 +59,8 @@ class ConciliadorSalidas
             $res = ['estado' => 'calzado', 'nota' => $mejor['label'],
                     'vinculo' => $c->tipo === 'personal' ? 'reembolso' : $mejor['clase'],
                     'sueldo_pagado_id' => $mejor['clase'] === 'sueldo' ? $mejor['id'] : null,
-                    'pago_egreso_id' => $mejor['clase'] === 'egreso' ? $mejor['id'] : null];
+                    'pago_egreso_id' => $mejor['clase'] === 'egreso' ? $mejor['id'] : null,
+                    'egreso_id' => $mejor['clase'] === 'factura' ? $mejor['id'] : null];
             if ($c->tipo === 'personal') {
                 $res['nota'] = 'Gasto de Botacura pagado desde tu cuenta: ' . $mejor['label'];
             }
@@ -98,7 +111,32 @@ class ConciliadorSalidas
             $res['sueldo_pagado_id'] = app(\App\Finanzas\SueldoSemanas::class)
                 ->marcarPagada((int) $res['user_id'], $res['pagar_semana'], $c->fecha ?: date('Y-m-d'));
         }
+        if (!empty($res['deuda_id'])) {
+            $d = DB::table('fin_deudas')->where('id', $res['deuda_id'])->first();
+            if ($d) {
+                app(\App\Finanzas\Egresos\Deudas::class)->registrarPago($d, (int) $c->monto, $c->fecha ?: date('Y-m-d'), 'banco', (int) $c->id);
+            }
+        }
+        // Categoría para el panel de egresos (si no viene de una factura o deuda)
+        if (($res['estado'] ?? '') === 'calzado' && empty($res['categoria_id']) && empty($res['egreso_id'])
+            && in_array($c->tipo, ['pago', 'compra', 'personal'], true) && Schema::hasColumn('fin_correos', 'categoria_id')) {
+            $cat = app(\App\Finanzas\Egresos\Categorizador::class)->paraNombre(trim($c->nombre . ' ' . $c->proveedor));
+            if ($cat) {
+                $res['categoria_id'] = $cat['categoria_id'];
+                $res['subcategoria_id'] = $cat['subcategoria_id'];
+            }
+            if (($res['vinculo'] ?? '') === 'sueldo') {
+                $sub = $this->subId('Personas', 'Sueldos del equipo');
+                if ($sub) {
+                    $res['categoria_id'] = $sub[0];
+                    $res['subcategoria_id'] = $sub[1];
+                }
+            }
+        }
         $cols = ['estado', 'nota', 'vinculo', 'sueldo_pagado_id', 'pago_egreso_id', 'correo_id'];
+        if (Schema::hasColumn('fin_correos', 'categoria_id')) {
+            $cols = array_merge($cols, ['categoria_id', 'subcategoria_id', 'egreso_id']);
+        }
         DB::table('fin_correos')->where('id', $c->id)->update(
             array_intersect_key($res, array_flip($cols)) + ['updated_at' => now()]
         );
@@ -169,6 +207,30 @@ class ConciliadorSalidas
             }
         }
 
+        // Facturas del SII (egresos) que todavía no tienen pago: el cuadre factura ↔ pago
+        if (Schema::hasTable('egresos') && Schema::hasColumn('egresos', 'fecha_egreso')) {
+            $q = DB::table('egresos as e')->leftJoin('proveedores as p', 'p.id', '=', 'e.proveedor_id')
+                ->where('e.total', $c->monto)
+                ->whereBetween('e.fecha_egreso', [date('Y-m-d', strtotime($fecha . ' -45 days')), date('Y-m-d', strtotime($fecha . ' +7 days'))])
+                ->whereNotExists(function ($w) {
+                    $w->select(DB::raw(1))->from('pagos_egresos as pe')->whereColumn('pe.egreso_id', 'e.id');
+                });
+            if (Schema::hasColumn('egresos', 'reconciliado_con_id')) {
+                $q->whereNull('e.reconciliado_con_id');
+            }
+            foreach ($q->select('e.id', 'e.total', 'e.fecha_egreso', 'p.nombre as proveedor', 'p.rut')->limit(20)->get() as $e) {
+                $pts = 2;
+                if ($c->rut && $e->rut && self::rut($c->rut) === self::rut($e->rut)) {
+                    $pts += 2;
+                } elseif (self::mismoNombre(trim($c->nombre . ' ' . $c->proveedor), $e->proveedor, 1)) {
+                    $pts += 1;
+                }
+                $pts += abs(strtotime($e->fecha_egreso) - strtotime($fecha)) <= 7 * 86400 ? 1 : 0;
+                $out[] = ['clase' => 'factura', 'id' => $e->id, 'puntos' => $pts,
+                    'label' => 'Factura de ' . ($e->proveedor ?: 'sin proveedor') . ' del ' . date('d-m', strtotime($e->fecha_egreso)) . ' (egreso #' . $e->id . ')'];
+            }
+        }
+
         usort($out, function ($a, $b) {
             return $b['puntos'] <=> $a['puntos'];
         });
@@ -216,8 +278,20 @@ class ConciliadorSalidas
         return $hit;
     }
 
+    /** [categoria_id, subcategoria_id] de una subcategoría del árbol nuevo, por nombre. */
+    private function subId(string $cat, string $sub): ?array
+    {
+        $catId = DB::table('categorias_compras')->where('nombre', $cat)->value('id');
+        $subId = $catId ? DB::table('subcategorias_compras')->where('categoria_id', $catId)->where('nombre', $sub)->value('id') : null;
+        return $subId ? [(int) $catId, (int) $subId] : null;
+    }
+
     private function yaUsado(array $x): bool
     {
+        if ($x['clase'] === 'factura') {
+            return Schema::hasColumn('fin_correos', 'egreso_id')
+                && DB::table('fin_correos')->where('egreso_id', $x['id'])->where('estado', 'calzado')->exists();
+        }
         $col = $x['clase'] === 'sueldo' ? 'sueldo_pagado_id' : 'pago_egreso_id';
         return DB::table('fin_correos')->where($col, $x['id'])->where('estado', 'calzado')->exists();
     }

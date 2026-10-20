@@ -49,7 +49,10 @@ class FinanzasClasificarController extends Controller
     public function index(Request $request)
     {
         $personal = FinanzasCorreoController::puedeVerPersonal();
-        $tabs = ['entradas' => 'Entradas', 'salidas' => 'Salidas', 'cuentas' => 'Cuentas por pagar'];
+        $tabs = ['entradas' => 'Entradas', 'salidas' => 'Salidas'];
+        if (!\App\Finanzas\Egresos\Deudas::hay()) {
+            $tabs['cuentas'] = 'Cuentas por pagar';
+        }
         if ($personal) {
             $tabs['tuyos'] = 'Desde tu cuenta';
         }
@@ -139,11 +142,9 @@ class FinanzasClasificarController extends Controller
             return ['categoria_id' => $prev->categoria_id, 'subcategoria_id' => $prev->subcategoria_id, 'por' => 'la vez anterior'];
         }
         $prov = $this->proveedor($c->rut, null, false);
-        if ($prov && !empty($prov->subcategoria_id) && Schema::hasTable('subcategorias_compras')) {
-            $sub = DB::table('subcategorias_compras')->where('id', $prov->subcategoria_id)->first();
-            if ($sub) {
-                return ['categoria_id' => $sub->categoria_id, 'subcategoria_id' => $sub->id, 'por' => 'el proveedor'];
-            }
+        $cat = app(\App\Finanzas\Egresos\Categorizador::class)->paraNombre(trim($c->nombre . ' ' . $c->proveedor), $prov->id ?? null);
+        if ($cat) {
+            return $cat + ['por' => $cat['por'] === 'proveedor' ? 'el proveedor' : 'el nombre'];
         }
         return null;
     }
@@ -228,6 +229,7 @@ class FinanzasClasificarController extends Controller
                     'monto' => (int) $c->monto, 'fecha_pago' => $fecha, 'created_at' => now(), 'updated_at' => now(),
                 ]);
             }
+            app(\App\Finanzas\Egresos\Categorizador::class)->aprender($prov->id ?? null, $request->subcategoria_id ? (int) $request->subcategoria_id : null);
             DB::table('fin_correos')->where('id', $id)->update([
                 'egreso_id' => $egresoId, 'pago_egreso_id' => $pagoId,
                 'categoria_id' => (int) $request->categoria_id, 'subcategoria_id' => $request->subcategoria_id ?: null,

@@ -12,7 +12,7 @@ SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parc
 [ -n "$SHA" ] || SHA=parches-finanzas
 U=https://raw.githubusercontent.com/swimmerw/botacurapp-1/$SHA/correos
 echo "Version: ${SHA:0:7}"
-F="config/finanzas.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/ConciliadorSalidas.php app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php app/Http/Controllers/FinanzasClasificarController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php database/migrations/2026_10_19_220000_add_buzon_to_fin_correos.php database/migrations/2026_10_20_100000_add_vinculos_to_fin_correos.php database/migrations/2026_10_20_110000_add_clasificacion_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_badge.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_dia.blade.php resources/views/themes/backoffice/pages/finanzas_correos/movimientos.blade.php resources/views/themes/backoffice/pages/finanzas_correos/clasificar.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php app/Mail/GiftCardMailable.php"
+F="config/finanzas.php config/egresos.php app/Finanzas/Egresos/Categorizador.php app/Finanzas/Egresos/Deudas.php app/Console/Commands/FinanzasEgresos.php app/Http/Controllers/EgresosPanelController.php app/Http/Controllers/FinanzasDeudasController.php resources/views/themes/backoffice/pages/egresos_panel/_estilo.blade.php resources/views/themes/backoffice/pages/egresos_panel/_deuda.blade.php resources/views/themes/backoffice/pages/egresos_panel/_deuda_form.blade.php resources/views/themes/backoffice/pages/egresos_panel/mes.blade.php resources/views/themes/backoffice/pages/egresos_panel/deudas.blade.php database/migrations/2026_10_20_120000_create_fin_deudas_y_categorias.php app/Finanzas/Correo/ImapCliente.php app/Finanzas/Correo/Mime.php app/Finanzas/Correo/Lector.php app/Finanzas/Correo/ConciliadorAbonos.php app/Finanzas/Correo/ConciliadorSalidas.php app/Finanzas/SueldoSemanas.php app/Finanzas/Correo/Dkim.php app/Finanzas/Correo/Seguridad.php app/Console/Commands/LeerCorreosBancarios.php app/Http/Controllers/FinanzasCorreoController.php app/Http/Controllers/FinanzasClasificarController.php routes/finanzas.php database/migrations/2026_10_19_200000_create_fin_correos_table.php database/migrations/2026_10_19_210000_add_seguridad_to_fin_correos.php database/migrations/2026_10_19_220000_add_buzon_to_fin_correos.php database/migrations/2026_10_20_100000_add_vinculos_to_fin_correos.php database/migrations/2026_10_20_110000_add_clasificacion_to_fin_correos.php resources/views/themes/backoffice/pages/finanzas_correos/index.blade.php resources/views/themes/backoffice/pages/finanzas_correos/show.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_badge.blade.php resources/views/themes/backoffice/pages/finanzas_correos/_dia.blade.php resources/views/themes/backoffice/pages/finanzas_correos/movimientos.blade.php resources/views/themes/backoffice/pages/finanzas_correos/clasificar.blade.php resources/views/themes/backoffice/layouts/includes/menu_finanzas.blade.php app/Mail/GiftCardMailable.php"
 TS=$(date +%Y%m%d%H%M)
 for f in $F; do
   mkdir -p "$(dirname "$f")"
@@ -72,10 +72,13 @@ if [ -f $C ] && [ -f $V ]; then
     && php -l $C >/dev/null || { cp $C.bak.$TS $C; cp $V.bak.$TS $V; echo "AVISO: Reservas del dia sin cambios (restaurado)"; }
 fi
 
-for m in 2026_10_19_200000_create_fin_correos_table 2026_10_19_210000_add_seguridad_to_fin_correos 2026_10_19_220000_add_buzon_to_fin_correos 2026_10_20_100000_add_vinculos_to_fin_correos 2026_10_20_110000_add_clasificacion_to_fin_correos; do
+for m in 2026_10_19_200000_create_fin_correos_table 2026_10_19_210000_add_seguridad_to_fin_correos 2026_10_19_220000_add_buzon_to_fin_correos 2026_10_20_100000_add_vinculos_to_fin_correos 2026_10_20_110000_add_clasificacion_to_fin_correos 2026_10_20_120000_create_fin_deudas_y_categorias; do
   php artisan migrate --path=database/migrations/$m.php --force | grep -v "Nothing to migrate" || true
 done
 
+curl -fsSL "$U/egresos_rutas.py" -o /tmp/egresos_rutas.py && cp routes/web.php routes/web.php.bak.$TS && python3 /tmp/egresos_rutas.py || { cp routes/web.php.bak.$TS routes/web.php; echo "AVISO: panel de egresos sin enlazar"; }
+php artisan finanzas:egresos deudas-iniciales
+php artisan finanzas:egresos cuentas
 grep -q '^FIN_IMAP_USER=' .env || printf '\n# Finanzas: lectura de correos bancarios\nFIN_IMAP_USER=botacura.info@gmail.com\nFIN_IMAP_PASS=\nFIN_IMAP_FOLDER="[Gmail]/All Mail"\nFIN_IMAP_DIAS=3\n' >> .env
 grep -q '^FIN_IMAP2_USER=' .env || printf 'FIN_IMAP2_USER=swimmerw@gmail.com\nFIN_IMAP2_PASS=\n' >> .env
 if ! grep -q '^FINANZAS_USUARIOS=' .env; then
@@ -92,5 +95,7 @@ echo "Ven Finanzas: $(grep '^FINANZAS_USUARIOS=' .env | cut -d= -f2)"
 echo "Gastos personales los ve: $(grep '^FINANZAS_PERSONAL=' .env | cut -d= -f2)"
 php artisan finanzas:leer-correos --releer
 php artisan finanzas:leer-correos --recruzar
+echo "Categorias nuevas (simulacion, todavia no se guarda):"
+php artisan finanzas:egresos categorizar
 echo "Salidas de la ultima semana:"
 php artisan tinker --execute="foreach (DB::table('fin_correos')->whereIn('tipo',['pago','compra','retiro','traspaso','personal','cuenta'])->where('fecha','>=',now()->subDays(7)->toDateString())->select('tipo','estado',DB::raw('COUNT(*) n'),DB::raw('SUM(monto) t'))->groupBy('tipo','estado')->get() as \$r) echo str_pad(\$r->tipo,9).str_pad(\$r->estado,9).str_pad(\$r->n,4,' ',STR_PAD_LEFT).'  \$'.number_format(\$r->t,0,',','.').PHP_EOL;" 2>/dev/null

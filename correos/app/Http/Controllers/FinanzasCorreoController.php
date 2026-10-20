@@ -123,16 +123,17 @@ class FinanzasCorreoController extends Controller
     /** Asociar a mano una salida con un sueldo pagado o con el pago de un egreso. */
     public function vincular(Request $request, $id)
     {
-        $request->validate(['clase' => 'required|in:sueldo,egreso', 'ref' => 'required|integer']);
+        $request->validate(['clase' => 'required|in:sueldo,egreso,factura', 'ref' => 'required|integer']);
         $c = DB::table('fin_correos')->where('id', $id)->first();
         abort_if(!$c || !in_array($c->tipo, ['pago', 'compra', 'personal'], true), 404);
-        $tabla = $request->clase === 'sueldo' ? 'sueldos_pagados' : 'pagos_egresos';
+        $tabla = ['sueldo' => 'sueldos_pagados', 'egreso' => 'pagos_egresos', 'factura' => 'egresos'][$request->clase];
         abort_unless(DB::table($tabla)->where('id', $request->ref)->exists(), 404);
         DB::table('fin_correos')->where('id', $id)->update([
             'estado' => 'calzado',
             'vinculo' => $c->tipo === 'personal' ? 'reembolso' : $request->clase,
             'sueldo_pagado_id' => $request->clase === 'sueldo' ? $request->ref : null,
             'pago_egreso_id' => $request->clase === 'egreso' ? $request->ref : null,
+        ] + ($request->clase === 'factura' ? ['egreso_id' => $request->ref] : []) + [
             'nota' => mb_substr(($request->input('label') ?: ucfirst($request->clase) . ' #' . $request->ref) . ' · asociado por ' . auth()->user()->name, 0, 191),
             'updated_at' => now(),
         ] + self::marcaClasificado());
