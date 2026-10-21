@@ -62,13 +62,19 @@
                     @if(!$x['personas'])
                         <div class="linea gris">Sin reservas todavía.</div>
                     @else
-                        <div class="linea"><b>Atención</b>@foreach($x['atencion'] as $p)<span class="chip-p">{{ $p['corto'] }}</span>@endforeach
-                            @if($x['falta'])<span class="chip-p alerta">faltan {{ $x['falta'] }}</span>@endif
-                            <span class="gris" style="font-size:.8rem">({{ $x['necesarios'] }} para {{ $x['personas'] }} clientes)</span></div>
+                        <div class="linea">
+                            @if($x['bajo_minimo'])<span class="chip-p alerta">bajo el mínimo de {{ $params['minimo_abrir'] }}: día a pérdida</span>
+                            @elseif($x['rentable'])<span class="chip-p">rentable</span>
+                            @else<span class="chip-p libre">no pierde, aún no cubre los fijos (rentable desde {{ $params['rentable_desde'] }})</span>@endif
+                            <span class="gris" style="font-size:.8rem">tramo desde {{ $x['tramo']['desde'] }}: {{ $x['tramo']['frente'] }} frente · {{ $x['tramo']['cocina'] }} cocina · {{ $x['tramo']['aseo'] }} aseo</span></div>
+                        <div class="linea"><b>Frente</b>@foreach($x['atencion'] as $p)<span class="chip-p">{{ $p['corto'] }}</span>@endforeach
+                            @if($x['falta'])<span class="chip-p alerta">faltan {{ $x['falta'] }}</span>@endif</div>
                         @if($x['quedan_libres'])<div class="linea"><b>Libres</b>@foreach($x['quedan_libres'] as $p)<span class="chip-p libre">{{ $p['corto'] }}</span>@endforeach</div>@endif
                         <div class="linea"><b>Cocina</b>{{ $nombres($x['cocina']) ?: '—' }}
+                            @if($x['falta_cocina'])<span class="chip-p alerta">faltan {{ $x['falta_cocina'] }}</span>@endif
                             @if($x['copero'])<span class="chip-p alerta">{{ $x['apoyo'] ? '+ ' . $nombres($x['apoyo']) : '+ llamar copero' }}</span>@endif</div>
                     @endif
+                    @if($x['personas'] && ($x['aseo'] || $x['falta_aseo']))<div class="linea"><b>Aseo</b>{{ $nombres($x['aseo']) }}@if($x['falta_aseo'])<span class="chip-p alerta">falta {{ $x['falta_aseo'] }}</span>@endif</div>@endif
                     @if($x['fijos'])<div class="linea"><b>Fijos</b><span class="gris">{{ $nombres($x['fijos']) }}</span></div>@endif
                     @if($x['asignados'])<div class="linea"><b>Asignados</b><span class="gris">{{ collect($x['asignados'])->map(function ($n) { return \App\Equipo\Turnos::corto($n); })->implode(', ') }}</span></div>@endif
                     @if($x['guardada'] && $x['guardada']->avisado_at)<div class="linea gris" style="font-size:.8rem">Avisado {{ \Carbon\Carbon::parse($x['guardada']->avisado_at)->format('d-m H:i') }} · {{ $x['guardada']->aviso_estado }}</div>@endif
@@ -122,7 +128,7 @@
                     @endforeach
                     <div style="margin-top:12px"><button class="btn-c">Guardar reglas</button></div>
                 </form>
-                <p class="gris" style="font-size:.8rem;margin:10px 0 0">Atención = clientes ÷ clientes por persona, redondeado hacia arriba, con el mínimo. Cocina: todo el equipo de cocina disponible ese día; el copero o la persona de "Apoyo a llamado" se suma desde el umbral.</p>
+                <p class="gris" style="font-size:.8rem;margin:10px 0 0">Tramos: "13:3,2,1" = desde 13 clientes, 3 en frente, 2 en cocina y 1 en aseo. Con el equipo mínimo un día no pierde desde 7 clientes y es rentable (cubre también los gastos fijos) desde unos 20. El copero o la persona de "Apoyo a llamado" se suma desde el umbral.</p>
             </section>
         </div>
     </div>

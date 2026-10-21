@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
  */
 class Turnos
 {
-    const AREAS = ['atencion' => 'Atención', 'cocina' => 'Cocina', 'apoyo' => 'Apoyo a llamado', 'fijo' => 'Turno fijo', 'no' => 'No entra en turnos'];
+    const AREAS = ['atencion' => 'Frente (atención)', 'cocina' => 'Cocina', 'aseo' => 'Aseo', 'apoyo' => 'Apoyo a llamado', 'fijo' => 'Turno fijo', 'no' => 'No entra en turnos'];
     const DIAS = [1 => 'Lu', 2 => 'Ma', 3 => 'Mi', 4 => 'Ju', 5 => 'Vi', 6 => 'Sá', 7 => 'Do'];
     const ROLES_ASIGNACION = ['anfitriona', 'barman', 'cocina', 'garzon', 'jefe local'];
 
@@ -26,8 +26,9 @@ class Turnos
     public static function parametrosDefault(): array
     {
         return [
-            'clientes_por_atencion' => ['Clientes por cada persona de atención', '12'],
-            'minimo_atencion'       => ['Mínimo de personas de atención en un día abierto', '3'],
+            'tramos'                => ['Equipo por tramo de clientes (desde: frente, cocina, aseo; separados por ;)', '6:2,1,1; 13:3,2,1; 25:3,3,1; 37:4,3,1; 49:5,3,2'],
+            'minimo_abrir'          => ['Clientes mínimos para que el día no pierda (equipo mínimo)', '7'],
+            'rentable_desde'        => ['Clientes desde los que el día es rentable (cubre también los fijos)', '20'],
             'umbral_copero'         => ['Llamar copero o ayudante de cocina desde (clientes)', '50'],
             'telefonos_aviso'       => ['WhatsApp que reciben el aviso (separados por coma)', '56961910398'],
             'avisar_trabajadores'   => ['Avisar también a cada trabajador (sí/no)', 'no'],
@@ -48,6 +49,18 @@ class Turnos
             }
         }
         return $out;
+    }
+
+    /** Tramo que corresponde a la cantidad de clientes: ['desde', 'frente', 'cocina', 'aseo']. */
+    public static function tramo(int $clientes): array
+    {
+        $t = ['desde' => 0, 'frente' => 2, 'cocina' => 1, 'aseo' => 1];
+        foreach (array_filter(array_map('trim', explode(';', self::parametros()['tramos']))) as $f) {
+            if (preg_match('/^(\d+)\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)$/', $f, $m) && $clientes >= (int) $m[1] && (int) $m[1] >= $t['desde']) {
+                $t = ['desde' => (int) $m[1], 'frente' => (int) $m[2], 'cocina' => (int) $m[3], 'aseo' => (int) $m[4]];
+            }
+        }
+        return $t;
     }
 
     /** Personas del equipo con su configuración (las que no tienen fila quedan según su rol). */
@@ -119,15 +132,17 @@ class Turnos
             ->where('asignaciones.fecha', '<>', $fecha)
             ->groupBy('asignacion_user.user_id')->selectRaw('asignacion_user.user_id, COUNT(*) n')->pluck('n', 'user_id');
 
-        $porCliente = max(1, (int) $p['clientes_por_atencion']);
-        $necesarios = $d['personas'] > 0 ? max((int) $p['minimo_atencion'], (int) ceil($d['personas'] / $porCliente)) : 0;
-        $candidatos = $disp('atencion')->sortBy(function ($u) use ($semana) {
-            return sprintf('%02d-%02d-%s', $u->prioridad, $semana[$u->id] ?? 0, $u->name);
-        })->values();
+        $tr = $d['personas'] > 0 ? self::tramo($d['personas']) : ['desde' => 0, 'frente' => 0, 'cocina' => 0, 'aseo' => 0];
+        $orden = function ($u) use ($semana) { return sprintf('%02d-%02d-%s', $u->prioridad, $semana[$u->id] ?? 0, $u->name); };
+        $necesarios = $tr['frente'];
+        $candidatos = $disp('atencion')->sortBy($orden)->values();
         $atencion = $candidatos->take($necesarios)->values();
         $falta = max(0, $necesarios - $candidatos->count());
-
-        $cocina = $d['personas'] > 0 ? $disp('cocina')->values() : collect();
+        $candCocina = $disp('cocina')->sortBy($orden)->values();
+        $cocina = $candCocina->take($tr['cocina'])->values();
+        $faltaCocina = max(0, $tr['cocina'] - $candCocina->count());
+        $aseo = $disp('aseo')->sortBy($orden)->take($tr['aseo'])->values();
+        $faltaAseo = max(0, $tr['aseo'] - $aseo->count());
         $copero = $d['personas'] >= (int) $p['umbral_copero'];
         $apoyo = $copero ? $disp('apoyo')->sortBy('prioridad')->take(1)->values() : collect();
         $fijos = $disp('fijo')->values();
@@ -135,7 +150,9 @@ class Turnos
         $nombres = function ($c) { return $c->map(function ($u) { return ['id' => $u->id, 'nombre' => $u->name, 'corto' => $u->corto, 'telefono' => $u->telefono]; })->all(); };
         return [
             'fecha' => $fecha, 'dia' => $c->locale('es')->isoFormat('dddd D [de] MMMM'), 'dow' => $dow] + $d + [
-            'necesarios' => $necesarios, 'falta' => $falta,
+            'necesarios' => $necesarios, 'falta' => $falta, 'tramo' => $tr, 'falta_cocina' => $faltaCocina, 'falta_aseo' => $faltaAseo,
+            'aseo' => $nombres($aseo), 'bajo_minimo' => $d['personas'] > 0 && $d['personas'] < (int) $p['minimo_abrir'],
+            'rentable' => $d['personas'] >= (int) $p['rentable_desde'],
             'atencion' => $nombres($atencion), 'quedan_libres' => $nombres($candidatos->slice($necesarios)),
             'cocina' => $nombres($cocina), 'copero' => $copero, 'apoyo' => $nombres($apoyo), 'fijos' => $nombres($fijos),
         ];
@@ -151,16 +168,22 @@ class Turnos
         }
         $t = "Turnos para {$cuando}{$x['dia']}: {$x['personas']} clientes en {$x['reservas']} reservas"
             . ($x['masajes'] ? ", {$x['masajes']} masajes" : '') . '. '
-            . 'Atención (' . count($x['atencion']) . '): ' . ($x['atencion'] ? $n($x['atencion']) : 'nadie disponible')
+            . (!empty($x['bajo_minimo']) ? 'Bajo el mínimo de ' . self::parametros()['minimo_abrir'] . ' clientes: día a pérdida. ' : '')
+            . 'Frente (' . count($x['atencion']) . '): ' . ($x['atencion'] ? $n($x['atencion']) : 'nadie disponible')
             . ($x['falta'] ? " · faltan {$x['falta']}" : '') . '. ';
         if ($x['cocina']) {
-            $t .= 'Cocina: ' . $n($x['cocina']) . ($x['copero'] ? ' + ' . ($x['apoyo'] ? $n($x['apoyo']) . ' de apoyo' : 'llamar copero') : '') . '. ';
+            $t .= 'Cocina: ' . $n($x['cocina']) . (!empty($x['falta_cocina']) ? " · faltan {$x['falta_cocina']}" : '')
+                . ($x['copero'] ? ' + ' . ($x['apoyo'] ? $n($x['apoyo']) . ' de apoyo' : 'llamar copero') : '') . '. ';
         } elseif ($x['copero']) {
             $t .= 'Llamar copero o ayudante de cocina. ';
+        }
+        if (!empty($x['aseo']) || !empty($x['falta_aseo'])) {
+            $t .= 'Aseo: ' . ($x['aseo'] ? $n($x['aseo']) : '') . (!empty($x['falta_aseo']) ? ($x['aseo'] ? ' · ' : '') . "falta {$x['falta_aseo']}" : '') . '. ';
         }
         if ($x['fijos']) {
             $t .= 'Fijos: ' . $n($x['fijos']) . '. ';
         }
+        $t = str_replace('..', '.', $t);
         return trim($t . 'Revisar y aceptar: ' . rtrim(config('app.url'), '/') . '/equipo/turnos');
     }
 
@@ -183,7 +206,7 @@ class Turnos
     {
         $prop = DB::table('turno_propuestas')->where('fecha', $fecha)->first();
         $x = $prop ? json_decode($prop->propuesta, true) : $this->proponer($fecha);
-        $ids = array_merge(array_column($x['atencion'], 'id'), array_column($x['cocina'], 'id'), array_column($x['apoyo'], 'id'));
+        $ids = array_merge(array_column($x['atencion'], 'id'), array_column($x['cocina'], 'id'), array_column($x['apoyo'], 'id'), array_column($x['aseo'] ?? [], 'id'));
         $validos = DB::table('role_user')->join('roles', 'roles.id', '=', 'role_user.role_id')
             ->whereIn('role_user.user_id', $ids ?: [0])->get(['role_user.user_id', 'roles.name'])
             ->filter(function ($r) { return in_array(mb_strtolower($r->name), self::ROLES_ASIGNACION, true); })

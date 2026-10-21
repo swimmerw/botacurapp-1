@@ -68,7 +68,7 @@ class EquipoTurnosManana extends Command
             ['Juan Guzm%', 'atencion', '1,2,3,4,5,6,7', 1], ['Catalina Maur%', 'atencion', '1,2,3,4,5,6,7', 1],
             ['Fernando Morales%', 'atencion', '1,2,3,4,5,6,7', 1], ['Pamela%', 'atencion', '4,5,6,7', 2],
             ['David Tapia%', 'atencion', '4,5,6,7', 2], ['Francisca Bahamondes%', 'atencion', '1,2,3,4,5', 3],
-            ['Elohim%', 'fijo', '1,2,3,4,5', 5], ['Fabiola%', 'fijo', '1,4', 5], ['Juan Carlos%', 'fijo', '6,7', 5],
+            ['Elohim%', 'fijo', '1,2,3,4,5', 5], ['Fabiola%', 'aseo', '1,4', 5], ['Juan Carlos%', 'fijo', '6,7', 5],
             ['Gabriel Villar%', 'no', '', 9], ['Paula Riquelme%', 'no', '', 9], ['Octavio Pe%', 'no', '', 9],
         ];
         foreach ($reglas as [$patron, $area, $dias, $prio]) {
