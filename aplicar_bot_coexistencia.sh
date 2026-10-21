@@ -29,6 +29,7 @@ php -l app/Http/Controllers/Api/WhatsAppWebhookController.php >/dev/null && php 
 php artisan route:clear >/dev/null; php artisan view:clear >/dev/null
 
 echo "---- Coexistencia"
+curl -fsSL "$U/numeros.php" -o numeros_tmp.php && php numeros_tmp.php; rm -f numeros_tmp.php
 leer() { grep -m1 "^$1=" .env | cut -d= -f2- | tr -d '"'; }
 echo "  Bot de reservas responde desde: $(leer META_PHONE_NUMBER_ID) · Home Assistant: $(leer HA_PHONE_NUMBER_ID) · HA_TELEFONOS: $(leer HA_TELEFONOS)"
 if [ -n "$NUEVO" ]; then
