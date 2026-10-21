@@ -15,7 +15,14 @@ foreach (($dbg['data']['granular_scopes'] ?? []) as $s) {
         foreach (($s['target_ids'] ?? []) as $id) $wabas[$id] = true;
     }
 }
-if (!$wabas) echo "El token no lista cuentas de WhatsApp en sus permisos (puede tener acceso a todas las del negocio).\n";
+// Además: la cuenta conocida y las de cada negocio al que tiene acceso el token
+$wabas[env('HA_WABA_ID', '27846116655070945')] = true;
+foreach (($get('me/businesses', ['fields' => 'id,name'])['data'] ?? []) as $b) {
+    echo "Negocio {$b['id']} ({$b['name']})\n";
+    foreach (['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts'] as $rel) {
+        foreach (($get("{$b['id']}/$rel", ['fields' => 'id,name'])['data'] ?? []) as $w) $wabas[$w['id']] = true;
+    }
+}
 foreach (array_keys($wabas) as $w) {
     $info = $get($w, ['fields' => 'name']);
     echo "Cuenta $w (" . ($info['name'] ?? '?') . ")\n";
