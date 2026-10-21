@@ -17,7 +17,7 @@ for f in resources/views/themes/backoffice/pages/reserva/includes/_bandera_bot.b
   [ -f "$f" ] && cp "$f" "$f.bak.$TS"; mv "$f.nuevo" "$f"
 done
 V=resources/views/themes/backoffice/pages
-PATCHED="$V/reserva/screens/principal.blade.php $V/reserva/screens/mobile.blade.php $V/reserva/screens/alternative.blade.php $V/reserva/index_registro.blade.php $V/reporte/reservas_dia.blade.php app/Http/Controllers/Api/WhatsAppWebhookController.php routes/web.php $V/bot-conversaciones/index.blade.php"
+PATCHED="app/Http/Controllers/WhatsAppConectarController.php resources/views/whatsapp/conectar.blade.php $V/reserva/screens/principal.blade.php $V/reserva/screens/mobile.blade.php $V/reserva/screens/alternative.blade.php $V/reserva/index_registro.blade.php $V/reporte/reservas_dia.blade.php app/Http/Controllers/Api/WhatsAppWebhookController.php routes/web.php $V/bot-conversaciones/index.blade.php"
 for f in $PATCHED; do [ -f $f ] && cp $f $f.bak.$TS; done
 restaurar() { for f in $PATCHED; do [ -f $f.bak.$TS ] && cp $f.bak.$TS $f; done; echo "ERROR: $1 (restaurado)"; exit 1; }
 echo "---- Banderín BOT"
@@ -25,6 +25,9 @@ curl -fsSL "$U/patch_bandera.py" | python3 - || restaurar "banderín"
 echo "---- Bot por conversación"
 php artisan migrate --force --path=database/migrations/2026_10_21_200000_create_bot_chats_pausados.php | tail -1
 curl -fsSL "$U/patch_pausa.py" | python3 - || restaurar "bot por conversación"
+echo "---- Página Conectar"
+curl -fsSL "$U/patch_conectar.py" | python3 - || restaurar "página conectar"
+php -l app/Http/Controllers/WhatsAppConectarController.php >/dev/null || restaurar "sintaxis conectar"
 php -l app/Http/Controllers/Api/WhatsAppWebhookController.php >/dev/null && php -l routes/web.php >/dev/null || restaurar "sintaxis"
 php artisan route:clear >/dev/null; php artisan view:clear >/dev/null
 
