@@ -31,4 +31,8 @@ if 'enviar(' not in s:
   }""",1)
     s=s.replace("      if (!datos.evento) linea('Meta no informó el resultado del registro (puede que no se haya terminado)', false);","      if (!datos.evento) linea('Esperando el resultado del registro de Meta…', false);",1)
     open(p,'w',encoding='utf-8').write(s); hechos.append('vista')
+p='resources/views/whatsapp/conectar.blade.php'; s=open(p,encoding='utf-8').read()
+if 'typeof e.data' not in s:
+    s=s.replace("      var m = JSON.parse(e.data);","      var m = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;\n      try { console.log('[Meta]', JSON.stringify(m)); } catch (z) {}\n      if (m && m.type && m.type !== 'WA_EMBEDDED_SIGNUP' && /WA_|EMBEDDED|SIGNUP/i.test(m.type)) linea('Aviso de Meta: ' + m.type + ' ' + (m.event || ''), false, JSON.stringify(m.data || {}).slice(0, 300));",1)
+    open(p,'w',encoding='utf-8').write(s); hechos.append('lectura del aviso')
 print('Página Conectar: ' + (', '.join(hechos) if hechos else 'ya estaba'))
