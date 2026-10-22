@@ -27,7 +27,7 @@ foreach ($precios as $id => $v) {
 // 2) Botacura Full: masaje 60 min + espumante, disponible para el bot
 $full = App\Programa::with('servicios')->find(2);
 $ids = $full->servicios->pluck('id')->all();
-$nuevos = array_values(array_unique(array_merge(array_diff($ids, [1]), [23, 18])));
+$nuevos = array_values(array_unique(array_merge(array_diff($ids, [1, 12, 20]), [23, 18, 6]))); // masaje 60, espumante, desayuno U once; sin bebida
 sort($ids); sort($nuevos);
 if ($ids != $nuevos) {
     echo "  Botacura Full servicios: ".$full->servicios->pluck('nombre_servicio')->implode(', ')." -> ".App\Servicio::whereIn('id', $nuevos)->pluck('nombre_servicio')->implode(', ')."\n";
