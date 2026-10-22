@@ -12,7 +12,7 @@ class PoroProductosController extends Controller
     {
         $this->middleware(function ($request, $next) {
             $u = $request->user();
-            if (!$u || !($u->has_role(config('app.admin_role')) || $u->has_role(config('app.jefe_local_role')))) {
+            if (!$u || !$u->has_role(config('app.admin_role'))) {
                 return response()->json(['mensaje' => 'No tienes permiso para editar productos.'], 403);
             }
             return $next($request);
