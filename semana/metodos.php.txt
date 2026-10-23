@@ -1,0 +1,107 @@
+
+    // ───────────────────────── Resumen semanal ─────────────────────────
+
+    /** Programas reservados del día: [['programa','reservas','personas']]. */
+    public function programasDia(string $fecha): array
+    {
+        $q = DB::table('reservas as r')->leftJoin('programas as p', 'p.id', '=', 'r.id_programa')->whereDate('r.fecha_visita', $fecha);
+        if (Schema::hasColumn('reservas', 'estado')) {
+            $q->where(function ($w) {
+                $w->whereNull('r.estado')->orWhereNotIn('r.estado', ['cancelada', 'no_show', 'pendiente_pago']);
+            });
+        }
+        return $q->groupBy('p.nombre_programa')->orderByRaw('SUM(r.cantidad_personas) DESC')
+            ->selectRaw("COALESCE(p.nombre_programa, 'Sin programa') programa, COUNT(*) reservas, COALESCE(SUM(r.cantidad_personas),0) personas")
+            ->get()->map(function ($r) { return (array) $r; })->all();
+    }
+
+    /** ¿$fecha es el primer día con reservas de su semana (lunes a domingo)? */
+    public function esPrimerDiaDeLaSemana(string $fecha): bool
+    {
+        $c = Carbon::parse($fecha);
+        if (!$this->demanda($fecha)['personas']) {
+            return false;
+        }
+        for ($d = $c->copy()->startOfWeek(); $d->lt($c); $d->addDay()) {
+            if ($this->demanda($d->toDateString())['personas'] > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Días desde $desde hasta el domingo de esa semana, con propuesta de equipo y programas. */
+    public function semana(string $desde): array
+    {
+        $c = Carbon::parse($desde);
+        $fin = $c->copy()->endOfWeek();
+        $dias = [];
+        for ($d = $c->copy(); $d->lte($fin); $d->addDay()) {
+            $x = $this->proponer($d->toDateString());
+            $x['programas'] = $x['personas'] ? $this->programasDia($x['fecha']) : [];
+            $x['corto_dia'] = self::DIAS[$x['dow']] . ' ' . $d->day;
+            $dias[] = $x;
+        }
+        return $dias;
+    }
+
+    /** Mensajes de una línea para los administradores: resumen + un mensaje por día con reservas. */
+    public function mensajesSemana(array $dias): array
+    {
+        $n = function ($l) { return implode(', ', array_column($l, 'corto')); };
+        $con = array_values(array_filter($dias, function ($x) { return $x['personas'] > 0; }));
+        $tot = array_sum(array_column($dias, 'personas'));
+        $res = array_sum(array_column($dias, 'reservas'));
+        $primero = $dias[0];
+        $ultimo = end($dias);
+        $out = [];
+        $out[] = 'Resumen semana ' . Carbon::parse($primero['fecha'])->locale('es')->isoFormat('D [de] MMM') . ' al '
+            . Carbon::parse($ultimo['fecha'])->locale('es')->isoFormat('D [de] MMM') . ": {$tot} clientes en {$res} reservas. "
+            . implode(' · ', array_map(function ($x) { return $x['corto_dia'] . ': ' . ($x['personas'] ?: '–'); }, $dias)) . '.';
+        foreach ($con as $x) {
+            $prog = implode(', ', array_map(function ($p) { return $p['programa'] . ' ' . $p['personas'] . ($p['reservas'] > 1 ? " ({$p['reservas']} res.)" : ''); }, $x['programas']));
+            $t = ucfirst($x['dia']) . ": {$x['personas']} clientes, {$x['reservas']} reservas" . ($x['masajes'] ? ", {$x['masajes']} masajes" : '') . ". {$prog}. "
+                . (!empty($x['bajo_minimo']) ? 'Bajo el mínimo para abrir. ' : '')
+                . 'Equipo: frente ' . ($x['atencion'] ? $n($x['atencion']) : 'nadie') . ($x['falta'] ? " (faltan {$x['falta']})" : '')
+                . ($x['cocina'] ? '; cocina ' . $n($x['cocina']) : '') . (!empty($x['falta_cocina']) ? " (faltan {$x['falta_cocina']})" : '')
+                . ($x['copero'] ? '; llamar copero' : '')
+                . (!empty($x['aseo']) ? '; aseo ' . $n($x['aseo']) : '')
+                . ($x['fijos'] ? '; fijos ' . $n($x['fijos']) : '') . '.';
+            $out[] = $t;
+        }
+        $out[] = 'Revisa y acepta los turnos en ' . rtrim(config('app.url'), '/') . '/equipo/turnos y luego usa "Avisar turnos al equipo" para que a cada uno le llegue su semana.';
+        return $out;
+    }
+
+    /** Turnos de cada persona en los días dados: lo asignado (aceptado) o, si no hay, lo propuesto. */
+    public function turnosPorPersona(array $dias): array
+    {
+        $equipo = $this->equipo()->keyBy('id');
+        $out = [];
+        foreach ($dias as $x) {
+            if (!$x['personas']) {
+                continue;
+            }
+            $asig = DB::table('asignaciones')->join('asignacion_user', 'asignacion_user.asignacion_id', '=', 'asignaciones.id')
+                ->where('asignaciones.fecha', $x['fecha'])->pluck('asignacion_user.user_id')->all();
+            $ids = $asig ?: array_merge(array_column($x['atencion'], 'id'), array_column($x['cocina'], 'id'),
+                array_column($x['apoyo'], 'id'), array_column($x['aseo'] ?? [], 'id'), array_column($x['fijos'], 'id'));
+            foreach (array_unique($ids) as $id) {
+                $u = $equipo[$id] ?? null;
+                if (!$u) {
+                    continue;
+                }
+                $out[$id] = $out[$id] ?? ['nombre' => $u->name, 'corto' => $u->corto, 'telefono' => $u->telefono, 'dias' => [], 'propuesto' => false];
+                $out[$id]['dias'][] = Carbon::parse($x['fecha'])->locale('es')->isoFormat('dddd D');
+                $out[$id]['propuesto'] = $out[$id]['propuesto'] || !$asig;
+            }
+        }
+        return $out;
+    }
+
+    public static function mensajeTrabajador(array $p): string
+    {
+        $d = $p['dias'];
+        $lista = count($d) > 1 ? implode(', ', array_slice($d, 0, -1)) . ' y ' . end($d) : $d[0];
+        return "Hola {$p['corto']}, tus turnos en Botacura esta semana: {$lista}, de 9:30 a 19:30. Si no puedes algún día, avísale a Sebastián lo antes posible.";
+    }
