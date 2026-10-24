@@ -6,7 +6,7 @@ SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parc
 R=https://raw.githubusercontent.com/swimmerw/botacurapp-1/${SHA:-parches-finanzas}
 echo "Version: ${SHA:0:7}"
 sudo mkdir -p public/infografias
-for s in wellness-day wellness-plus relax-day full-day; do
+for s in wellness-day wellness-plus relax-day full-day botacura-full; do
   sudo curl -fsSL "$R/afiches_web/afiche-$s-noviembre.jpg" -o "public/infografias/afiche-$s-noviembre.jpg" || { echo "ERROR bajando $s"; exit 1; }
 done
 sudo chown -R www-data:www-data public/infografias 2>/dev/null

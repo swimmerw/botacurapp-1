@@ -7,12 +7,12 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $c = new GuzzleHttp\Client(['base_uri' => rtrim(config('woocommerce.store_url'), '/').'/wp-json/wc/v3/',
     'auth' => [config('woocommerce.consumer_key'), config('woocommerce.consumer_secret')], 'timeout' => 90, 'http_errors' => false]);
 $base = rtrim(config('app.url'), '/').'/infografias/';
-$mapa = [39 => 'wellness-day', 1 => 'wellness-plus', 28 => 'relax-day', 48 => 'full-day'];
+$mapa = [39 => 'wellness-day', 1 => 'wellness-plus', 28 => 'relax-day', 48 => 'full-day', 2 => 'botacura-full'];
 foreach ($mapa as $id => $slug) {
     $p = App\Programa::find($id);
     if (!$p || !$p->wc_product_id) { echo "  #$id sin producto en la web\n"; continue; }
     $r = $c->get("products/{$p->wc_product_id}"); $prod = json_decode((string) $r->getBody(), true);
-    $galeria = array_map(function ($i) { return ['id' => $i['id']]; }, array_slice($prod['images'] ?? [], 1));
+    $galeria = array_map(function ($i) { return ['id' => $i['id']]; }, array_slice($prod['images'] ?? [], $slug === 'botacura-full' ? 0 : 1)); // Botacura Full no tenía afiche: se conservan todas sus fotos
     $src = $base."afiche-$slug-noviembre.jpg?v=".date('YmdHis');
     $r = $c->put("products/{$p->wc_product_id}", ['json' => ['images' => array_merge([['src' => $src, 'name' => "Afiche {$p->nombre_programa} noviembre", 'alt' => "{$p->nombre_programa}: valor por persona, Botacura"]], $galeria)]]);
     $b = json_decode((string) $r->getBody(), true);
