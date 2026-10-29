@@ -20,6 +20,7 @@ class CreateVentaDiferenciaCambiosTable extends Migration
             $table->integer('monto_nuevo');
             $table->unsignedBigInteger('id_tipo_anterior')->nullable();
             $table->unsignedBigInteger('id_tipo_nuevo')->nullable();
+            $table->string('campo', 30)->default('diferencia_programa');
             $table->string('motivo')->nullable();
             $table->timestamps();
         });

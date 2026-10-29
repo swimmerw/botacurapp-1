@@ -23,7 +23,7 @@ if 'modal_editar_diferencia' not in v:
     if not m:
         sys.exit("ERROR: no encontré el bloque 'Diferencia:' en venta.blade.php")
     boton = """
-        @if(Auth::user()->is_admin() && !is_null($reserva->venta->diferencia_programa))
+        @if(Auth::user()->is_admin() && !$reserva->venta->tiene_saldo_a_favor)
             <a href="javascript:void(0)" class="collection-item center-align valign-wrapper left"
                onclick="$('#modalEditarDiferencia').modal('open')">
                 <i class="material-icons tooltipped" data-position="bottom" data-tooltip="Editar diferencia">edit</i>
@@ -34,4 +34,28 @@ if 'modal_editar_diferencia' not in v:
     open(vp, 'w', encoding='utf-8').write(v)
     print("Boton agregado")
 else:
-    print("Boton ya existia")
+    viejo = "@if(Auth::user()->is_admin() && !is_null($reserva->venta->diferencia_programa))"
+    if viejo in v:
+        v = v.replace(viejo, "@if(Auth::user()->is_admin() && !$reserva->venta->tiene_saldo_a_favor)")
+        open(vp, 'w', encoding='utf-8').write(v)
+        print("Boton actualizado: ahora tambien antes del cierre")
+    else:
+        print("Boton ya existia")
+
+# 3) Enlace "Corregir" en la pantalla de cierre (solo administradores)
+cp = os.path.join(base, 'resources/views/themes/backoffice/pages/venta/cerrar.blade.php')
+if os.path.exists(cp):
+    c = open(cp, encoding='utf-8').read()
+    if 'editar-diferencia' not in c:
+        m = re.search(r'<label for="diferencia">[^<]*</label>', c)
+        if m:
+            enlace = (m.group(0) + "\n                  @if(Auth::user()->is_admin())"
+                      "<a href=\"{{ route('backoffice.reserva.show', $reserva) }}#editar-diferencia\" "
+                      "style=\"position:absolute;right:12px;top:0;font-size:13px\">Corregir diferencia</a>@endif")
+            c = c[:m.start()] + enlace + c[m.end():]
+            open(cp, 'w', encoding='utf-8').write(c)
+            print("Enlace en cierre agregado")
+        else:
+            print("AVISO: no encontré la etiqueta 'Diferencia por Pagar' en cerrar.blade.php (se puede corregir desde la reserva)")
+    else:
+        print("Enlace en cierre ya existia")
