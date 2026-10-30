@@ -2,6 +2,7 @@ import sys, os
 # Sueldos y CSV del banco:
 #  1) El CSV no vuelve a incluir semanas ya pagadas (selección y botón CSV de la semana).
 #  2) Cada CSV descargado guarda sus líneas (persona, semana, monto exacto).
+#  2b) Email 2 de cada línea = botacura.info@gmail.com, para que el aviso de cada transferencia llegue a la app.
 #  3) El aviso del banco calza contra esas líneas y marca "Pagado" solo (también con bono o lote completo).
 base = sys.argv[1]
 hechos = []
@@ -30,6 +31,13 @@ def servicio(s):
             "            $filas[] = implode(';', [", 0, q)
     s = uno(s, "            'omitidos' => $omitidos,\n", "            'omitidos' => $omitidos,\n            'lineas'   => $incluidos,\n", 0, q)
     return s
+
+# 1b) Email 2 del CSV: copia del aviso de cada transferencia a la casilla que lee la app
+def aviso(s):
+    if 'bancos.email_aviso' in s:
+        return s
+    return uno(s, "                $email1,\n                '',\n",
+               "                $email1,\n                config('bancos.email_aviso') ?: 'botacura.info@gmail.com',\n", 0, 'CsvPagoBancoService (Email 2)')
 
 # 2) Controlador: saca los ya pagados y registra las líneas de cada descarga
 FILTRO = """        // Semanas ya pagadas en Remuneraciones no vuelven a salir en el CSV
@@ -100,6 +108,7 @@ def conciliador(s):
     return s
 
 editar('app/Services/CsvPagoBancoService.php', servicio)
+editar('app/Services/CsvPagoBancoService.php', aviso)
 editar('app/Http/Controllers/SueldoController.php', controlador)
 editar('app/Finanzas/Correo/ConciliadorSalidas.php', conciliador)
 print('Sueldos CSV: ' + (', '.join(hechos) if hechos else 'ya estaba'))
