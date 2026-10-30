@@ -109,6 +109,9 @@ class VentaDiferenciaController extends Controller
 
     private function volver(Request $request, Venta $venta)
     {
+        if ($request->input('ir_a_cierre') === 'consumo') {
+            return redirect()->route('backoffice.reserva.venta.cierre');
+        }
         if ($request->input('ir_a_cierre') === '1' && is_null($venta->diferencia_programa)) {
             return redirect()->route('backoffice.reserva.venta.cerrar', ['reserva' => $venta->id_reserva, 'ventum' => $venta->id]);
         }

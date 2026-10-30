@@ -71,10 +71,12 @@
     </form>
 </div>
 <script>
-    // Desde la pantalla de cierre se llega con #editar-diferencia: abre el modal y vuelve al cierre al guardar.
+    // Llega con #editar-diferencia (cierre) o #editar-diferencia-consumo (Gestión consumo): abre el modal.
     window.addEventListener('load', function () {
-        if (window.location.hash === '#editar-diferencia' && window.jQuery) {
-            document.getElementById('dif_ir_a_cierre').value = '1';
+        var h = window.location.hash;
+        if ((h === '#editar-diferencia' || h === '#editar-diferencia-consumo') && window.jQuery) {
+            // desde el cierre vuelve al cierre; desde Gestión consumo vuelve a Gestión consumo
+            document.getElementById('dif_ir_a_cierre').value = h === '#editar-diferencia' ? '1' : 'consumo';
             jQuery('#modalEditarDiferencia').modal('open');
         }
     });
