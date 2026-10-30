@@ -37,7 +37,7 @@ def aviso(s):
     if 'bancos.email_aviso' in s:
         return s
     return uno(s, "                $email1,\n                '',\n",
-               "                $email1,\n                config('bancos.email_aviso') ?: 'botacura.info@gmail.com',\n", 0, 'CsvPagoBancoService (Email 2)')
+               "                $email1,\n                (in_array(strtolower(trim($email1)), ['hola@botacura.cl', 'botacura.info@gmail.com', 'botacurainfo@gmail.com'], true) ? '' : (config('bancos.email_aviso') ?: 'hola@botacura.cl')),\n", 0, 'CsvPagoBancoService (Email 2)')
 
 # 2) Controlador: saca los ya pagados y registra las líneas de cada descarga
 FILTRO = """        // Semanas ya pagadas en Remuneraciones no vuelven a salir en el CSV
