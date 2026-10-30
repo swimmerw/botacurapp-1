@@ -1,6 +1,6 @@
 #!/bin/bash
-# Gestión consumo: botón "Código QR" (carta digital botacura.ola.click) y, solo administradores,
-# botón "Corregir diferencia" por reserva. Incluye la edición de diferencia (aplicar_editar_diferencia.sh),
+# Gestión consumo: botón "Código QR" (carta digital botacura.ola.click, todos los perfiles) y, solo administradores,
+# edición del total a pagar en la columna "Diferencia" de Detalles Venta. Incluye la edición de diferencia (aplicar_editar_diferencia.sh),
 # así que basta con correr este. Se puede correr de nuevo.
 cd /var/www/html/botacurapp || exit 1
 SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parches-finanzas 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4)
@@ -12,7 +12,7 @@ curl -fsSL $R/aplicar_editar_diferencia.sh -o /tmp/aed.sh || exit 1
 bash /tmp/aed.sh || exit 1
 rm -f /tmp/aed.sh
 
-echo "== 2/2 Gestión consumo: Código QR y Corregir diferencia =="
+echo "== 2/2 Gestión consumo: Código QR y total a pagar en la columna Diferencia =="
 T=$(date +%Y%m%d%H%M)
 V=resources/views/themes/backoffice/pages/venta/cierre/index_cierre.blade.php
 sudo cp $V $V.bak.$T
