@@ -32,6 +32,4 @@ php artisan finanzas:leer-correos --recruzar 2>&1 | grep -v Deprecated | tail -n
 echo "---- Diagnóstico: $QUIEN"
 php diag_pago_tmp_$T.php "$QUIEN" 2>&1 | grep -v Deprecated
 rm -f diag_pago_tmp_$T.php /tmp/scsv.php /tmp/scsvm.php /tmp/scsvp.py
-# Si la cola de correos corre como servicio, se reinicia para que use el código nuevo
-php artisan queue:restart >/dev/null 2>&1
 echo LISTO
