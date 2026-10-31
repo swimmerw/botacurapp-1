@@ -1,6 +1,6 @@
 #!/bin/bash
-# Menús: postres del día (nombre y cantidad). Los ingresan cocina, administración y jefe de local;
-# se ven en la misma vista Menús para todos. Se puede correr de nuevo.
+# Menús: postres del día. Botón "Ingresar postres" abre un modal (nombre y cantidad) para cocina, administración y jefe de local;
+# el bloque muestra los postres con + y − para ajustar. Actualiza la versión anterior. Se puede correr de nuevo.
 cd /var/www/html/botacurapp || exit 1
 SHA=$(curl -fsSL https://api.github.com/repos/swimmerw/botacurapp-1/commits/parches-finanzas 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4)
 R=https://raw.githubusercontent.com/swimmerw/botacurapp-1/${SHA:-parches-finanzas}/postres
