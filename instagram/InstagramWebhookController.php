@@ -24,10 +24,17 @@ use Illuminate\Support\Facades\Schema;
  *   IG_API_VERSION         v23.0 por defecto
  *   IG_APP_SECRET          (opcional) para verificar la firma X-Hub-Signature-256
  *   IG_APP_ID              (opcional) id de la app, para reconocer los ecos de lo que envía el bot
- *   IG_BOT_ACTIVO          1 para que el bot responda; 0 para solo guardar los mensajes (por defecto 0)
+ *   IG_BOT_ACTIVO          valor inicial (0/1) mientras no se use el interruptor de Conversaciones del bot
  */
 class InstagramWebhookController extends Controller
 {
+    /** Bot de Instagram encendido: lo decide el interruptor de Conversaciones del bot; si nunca se usó, IG_BOT_ACTIVO del .env. */
+    public static function botActivo(): bool
+    {
+        $v = \App\BotSeccionTexto::where('clave', 'bot_instagram_activo')->value('contenido');
+        return $v !== null ? $v === '1' : env('IG_BOT_ACTIVO', '0') === '1';
+    }
+
     public function verify(Request $request)
     {
         if ($request->query('hub_mode') === 'subscribe'
@@ -97,7 +104,7 @@ class InstagramWebhookController extends Controller
             && DB::table('bot_chats_pausados')->where('telefono', preg_replace('/\D/', '', $de))->exists();
         $humano = DB::table('bot_conversaciones')->where('usuario_id', $usuario)->where('activo', 1)
             ->whereNotNull('humano_hasta')->where('humano_hasta', '>', now())->exists();
-        $apagado = env('IG_BOT_ACTIVO', '0') !== '1'
+        $apagado = !self::botActivo()
             || \App\BotSeccionTexto::where('clave', 'bot_activo')->value('contenido') === '0';
         if ($pausado || $humano || $apagado) {
             $this->guardarPendiente($usuario, $nombre, $texto);
@@ -145,7 +152,7 @@ class InstagramWebhookController extends Controller
         if ($ultimo && ($ultimo['role'] ?? '') === 'assistant' && strpos((string) $ultimo['content'], $texto) !== false) {
             return; // eco de lo que respondió el bot
         }
-        $linea = '[Equipo Botacura respondió por Instagram]: ' . $texto;
+        $linea = '[Equipo Botacura respondió]: ' . $texto; // mismo rótulo que WhatsApp, para que el visor lo muestre como Equipo
         if ($ultimo && ($ultimo['role'] ?? '') === 'assistant') {
             $historial[count($historial) - 1]['content'] .= "\n\n" . $linea;
         } else {
