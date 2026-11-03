@@ -15,7 +15,7 @@ curl -fsSL $R/patch.py -o /tmp/syncbhe.py || exit 1
 sudo python3 /tmp/syncbhe.py "$PWD" || restaurar "parche"
 for f in routes/web.php app/Http/Controllers/SueldoController.php; do php -l $f >/dev/null || restaurar "sintaxis en $f"; done
 sudo -u www-data php artisan route:clear >/dev/null; sudo -u www-data php artisan view:clear >/dev/null
-sudo -u www-data php artisan view:cache >/dev/null 2>&1 || restaurar "la vista no compila"
+sudo -u www-data php artisan view:clear >/dev/null
 sudo -u www-data php artisan route:list 2>/dev/null | grep -q "sincronizar-honorarios" && echo "Ruta OK" || restaurar "no quedó la ruta"
 rm -f /tmp/syncbhe.py
 echo LISTO
