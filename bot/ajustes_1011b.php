@@ -7,9 +7,9 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\DB;
 
 $frases = "en este momento no podemos responder\nfeliz la responderemos\nbienvenid@ a botacura\nsi deseas reservar, indícanos por favor fecha";
-DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'ecos_automaticos'], ['contenido' => $frases, 'updated_at' => now()]);
+DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'ecos_automaticos'], ['contenido' => $frases]);
 $horas = (int) ($argv[1] ?? 2);
-DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'param_horas_silencio_humano'], ['contenido' => (string) $horas, 'updated_at' => now()]);
+DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'param_horas_silencio_humano'], ['contenido' => (string) $horas]);
 echo "Mensajes automáticos de la app (bienvenida y ausencia): ya no pausan al bot\n";
 echo "Pausa después de que responde el equipo: {$horas} h\n";
 
@@ -26,7 +26,7 @@ foreach (DB::table('bot_conversaciones')->where('requiere_humano', 1)->whereNotN
     foreach ($lista as $f) { if ($ultimo && mb_strpos($ultimo, $f) !== false) { $auto = true; } }
     $nuevoHasta = \Carbon\Carbon::parse($c->humano_hasta)->subHours(12)->addHours($horas);
     if ($auto) {
-        DB::table('bot_conversaciones')->where('id', $c->id)->update(['humano_hasta' => null, 'updated_at' => now()]); $n++;
+        DB::table('bot_conversaciones')->where('id', $c->id)->update(['humano_hasta' => null]); $n++;
     } elseif ($nuevoHasta->lt(\Carbon\Carbon::parse($c->humano_hasta))) {
         DB::table('bot_conversaciones')->where('id', $c->id)->update(['humano_hasta' => $nuevoHasta->lte(now()) ? null : $nuevoHasta]);
     }
