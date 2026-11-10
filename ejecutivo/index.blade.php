@@ -37,6 +37,10 @@
 .bej .chat p{margin:0 0 8px;font-size:.85rem;white-space:pre-wrap}
 .bej .chat p b{display:block;font-size:.72rem;color:var(--mu);text-transform:uppercase;letter-spacing:.04em}
 .bej .chat p.bot{padding-left:14px;border-left:3px solid #c9d9cf}
+.bej .filtro{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+.bej .filtro a{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--borde);background:#fff;color:var(--tx);font-weight:600;font-size:.85rem;text-decoration:none}
+.bej .filtro a.on{background:var(--v);border-color:var(--v);color:#fff}
+.bej .filtro a span{font-size:.75rem;opacity:.75}
 .bej .vacio{background:var(--suave);border-radius:14px;padding:22px;text-align:center;color:var(--mu)}
 </style>
 @endsection
@@ -57,6 +61,12 @@
             <div><div class="num">{{ count($derivadas) }}</div><small>derivadas por el bot</small></div>
             <div><div class="num">{{ count($vencidas) }}</div><small>sin respuesta +24 h</small></div>
         </div>
+    </div>
+
+    <div class="filtro">
+        @foreach (['todos' => 'Todos', 'whatsapp' => 'WhatsApp', 'instagram' => 'Instagram'] as $k => $txt)
+            <a href="{{ route('backoffice.bot-ejecutivo.index', $k === 'todos' ? [] : ['canal' => $k]) }}" class="{{ $canal === $k ? 'on' : '' }}">{{ $txt }} <span>{{ $conteo[$k] }}</span></a>
+        @endforeach
     </div>
 
     @php
@@ -98,6 +108,7 @@
                 <a class="btn-v" href="{{ $chatUrl($it) }}" target="_blank" rel="noopener">Abrir chat</a>
                 <form method="POST" action="{{ route('backoffice.bot-ejecutivo.atender') }}">@csrf
                     <input type="hidden" name="telefono" value="{{ $it->telefono }}">
+                    @if ($canal !== 'todos')<input type="hidden" name="canal" value="{{ $canal }}">@endif
                     <button class="btn-l" type="submit">Marcar como atendida</button>
                 </form>
             </div>
@@ -127,6 +138,7 @@
                 <a class="btn-v" href="{{ $chatUrl($it) }}" target="_blank" rel="noopener">Abrir chat</a>
                 <form method="POST" action="{{ route('backoffice.bot-ejecutivo.atender') }}">@csrf
                     <input type="hidden" name="telefono" value="{{ $it->telefono }}">
+                    @if ($canal !== 'todos')<input type="hidden" name="canal" value="{{ $canal }}">@endif
                     <button class="btn-l" type="submit">Marcar como atendida</button>
                 </form>
             </div>

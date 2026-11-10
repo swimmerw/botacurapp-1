@@ -78,10 +78,29 @@ class BotEjecutivoController extends Controller
             if ($derivado) { $derivadas[] = $item; } else { $vencidas[] = $item; }
         }
 
-        usort($derivadas, function ($a, $b) { return $a->horas_restantes <=> $b->horas_restantes; });
+        // Primero las que aun se pueden responder a tiempo (menos tiempo restante arriba); despues las vencidas, mas recientes arriba
+        usort($derivadas, function ($a, $b) {
+            $va = $a->horas_restantes > 0; $vb = $b->horas_restantes > 0;
+            if ($va !== $vb) { return $va ? -1 : 1; }
+            return $va ? $a->horas_restantes <=> $b->horas_restantes : $b->ultimo_at <=> $a->ultimo_at;
+        });
         usort($vencidas, function ($a, $b) { return $b->ultimo_at <=> $a->ultimo_at; });
 
-        return view('themes.backoffice.pages.bot-ejecutivo.index', compact('derivadas', 'vencidas', 'atrasados'));
+        // Filtro por canal (?canal=whatsapp | instagram)
+        $canal = in_array($request->query('canal'), ['whatsapp', 'instagram'], true) ? $request->query('canal') : 'todos';
+        $todas = array_merge($derivadas, $vencidas);
+        $conteo = [
+            'todos' => count($todas),
+            'whatsapp' => count(array_filter($todas, function ($i) { return !$i->instagram; })),
+            'instagram' => count(array_filter($todas, function ($i) { return $i->instagram; })),
+        ];
+        if ($canal !== 'todos') {
+            $f = function ($i) use ($canal) { return $canal === 'instagram' ? $i->instagram : !$i->instagram; };
+            $derivadas = array_values(array_filter($derivadas, $f));
+            $vencidas = array_values(array_filter($vencidas, $f));
+        }
+
+        return view('themes.backoffice.pages.bot-ejecutivo.index', compact('derivadas', 'vencidas', 'atrasados', 'canal', 'conteo'));
     }
 
     public function atender(Request $request)
@@ -92,7 +111,8 @@ class BotEjecutivoController extends Controller
             ->where(function ($q) { $q->whereNull('tipo')->orWhere('tipo', '!=', 'comprobante'); })
             ->update(['estado' => 'atendido', 'updated_at' => now()]);
         Log::info('[BotEjecutivo] Atendida', ['telefono' => $tel, 'mensajes' => $n, 'por' => auth()->id()]);
-        return redirect()->route('backoffice.bot-ejecutivo.index')->with('success', 'Conversación marcada como atendida.');
+        $canal = in_array($request->input('canal'), ['whatsapp', 'instagram'], true) ? ['canal' => $request->input('canal')] : [];
+        return redirect()->route('backoffice.bot-ejecutivo.index', $canal)->with('success', 'Conversación marcada como atendida.');
     }
 
     private static function motivo(string $m): ?string
