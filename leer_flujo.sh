@@ -1,8 +1,8 @@
 #!/bin/bash
 # Solo lectura (codigo y guion del bot, sin datos de clientes): orden del flujo de reserva (10/11/2026)
-# Borrar la copia despues con: rm -rf /var/www/html/botacurapp/public/rev-
+# Borrar la copia despues con: rm -rf /var/www/html/botacurapp/public/rev-2ef74d3f5b35
 cd /var/www/html/botacurapp || exit 1
-D=public/rev-; mkdir -p $D
+D=public/rev-2ef74d3f5b35; mkdir -p $D
 for f in app/Services/BotPromptService.php app/Http/Controllers/Api/BotController.php app/Http/Controllers/Api/BotReservaController.php app/Services/DisponibilidadService.php app/Services/BotUbicacionesService.php app/Services/BotTarifasService.php app/Services/BotCasoService.php; do
   [ -f "$f" ] && cp "$f" $D/$(basename "$f" .php).txt
 done
