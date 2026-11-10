@@ -5,11 +5,24 @@ require '/var/www/html/botacurapp/vendor/autoload.php';
 $app = require '/var/www/html/botacurapp/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\DB;
+function guardarTexto(string $clave, string $contenido) {
+    if (DB::table('bot_secciones_texto')->where('clave', $clave)->exists()) {
+        DB::table('bot_secciones_texto')->where('clave', $clave)->update(['contenido' => $contenido]);
+        return;
+    }
+    // Nueva fila con la misma forma que las existentes (categoria y demas campos obligatorios)
+    $modelo = (array) (DB::table('bot_secciones_texto')->where('clave', 'like', 'param_%')->first() ?: DB::table('bot_secciones_texto')->first());
+    unset($modelo['id']);
+    $modelo['clave'] = $clave; $modelo['contenido'] = $contenido;
+    foreach (['titulo', 'nombre', 'descripcion', 'etiqueta'] as $k) { if (array_key_exists($k, $modelo)) { $modelo[$k] = $clave; } }
+    foreach (['created_at', 'updated_at'] as $k) { if (array_key_exists($k, $modelo)) { $modelo[$k] = now(); } }
+    DB::table('bot_secciones_texto')->insert($modelo);
+}
 
 $frases = "en este momento no podemos responder\nfeliz la responderemos\nbienvenid@ a botacura\nsi deseas reservar, indícanos por favor fecha";
-DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'ecos_automaticos'], ['contenido' => $frases]);
+guardarTexto('ecos_automaticos', $frases);
 $horas = (int) ($argv[1] ?? 2);
-DB::table('bot_secciones_texto')->updateOrInsert(['clave' => 'param_horas_silencio_humano'], ['contenido' => (string) $horas]);
+guardarTexto('param_horas_silencio_humano', (string) $horas);
 echo "Mensajes automáticos de la app (bienvenida y ausencia): ya no pausan al bot\n";
 echo "Pausa después de que responde el equipo: {$horas} h\n";
 
