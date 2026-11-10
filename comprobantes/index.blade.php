@@ -83,6 +83,26 @@
                 @endforelse
             </div>
 
+            <details style="margin-top:12px">
+                <summary class="btn-l" style="display:inline-flex;list-style:none">+ Crear la reserva con este comprobante</summary>
+                <form method="POST" action="{{ route('backoffice.comprobantes-sin-reserva.crear', $c->id) }}" class="cand" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;align-items:end">@csrf
+                    <label class="meta">Nombre<input name="nombre" required value="{{ optional($c->chat)->nombre_cliente ?: $c->nombre }}"></label>
+                    <label class="meta">Teléfono<input name="telefono" required value="{{ $c->telefono }}"></label>
+                    <label class="meta">Correo<input name="email" type="email" value="{{ optional($c->chat)->correo }}"></label>
+                    <label class="meta">Programa
+                        <select name="programa_id" required class="browser-default" style="height:34px;border:1px solid var(--borde);border-radius:9px">
+                            <option value="">Elegir…</option>
+                            @foreach ($programas as $p)
+                                <option value="{{ $p->id }}" {{ optional($c->chat)->id_programa == $p->id ? 'selected' : '' }}>{{ $p->nombre_programa }} (${{ number_format((int) $p->valor_programa, 0, ',', '.') }})</option>
+                            @endforeach
+                        </select></label>
+                    <label class="meta">Fecha de visita<input name="fecha" type="date" required value="{{ optional($c->chat)->fecha_visita }}"></label>
+                    <label class="meta">Personas<input name="personas" type="number" min="1" required value="{{ optional($c->chat)->cantidad_personas }}"></label>
+                    <button class="btn-v" type="submit">Crear reserva</button>
+                </form>
+                <div class="meta" style="margin-top:6px">Revisa el chat antes: el sistema valida el cupo, crea el cliente y la reserva, adjunta este comprobante y la deja en Verificación de pagos.</div>
+            </details>
+
             <div class="acciones">
                 <form method="POST" action="{{ route('backoffice.comprobantes-sin-reserva.asociar', $c->id) }}" style="display:flex;gap:8px;align-items:center">@csrf
                     <input type="number" name="reserva_id" placeholder="Reserva N°" required>

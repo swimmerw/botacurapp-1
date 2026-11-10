@@ -24,10 +24,13 @@ class ComprobantesSinReservaController extends Controller
                 $c->nombre = DB::table('bot_conversaciones')->where('usuario_id', $c->telefono)->whereNotNull('nombre_cliente')->orderBy('id', 'desc')->value('nombre_cliente');
             }
             $c->candidatas = CT::candidatas($c);
+            $c->chat = DB::table('bot_conversaciones')->where('usuario_id', $c->telefono)->orderBy('id', 'desc')
+                ->first(['nombre_cliente', 'correo', 'fecha_visita', 'cantidad_personas', 'id_programa']);
         }
+        $programas = DB::table('programas')->orderBy('nombre_programa')->get(['id', 'nombre_programa', 'valor_programa']);
         $resueltos = DB::table('comprobantes_sin_reserva')->where('estado', '!=', 'pendiente')
             ->orderBy('revisado_at', 'desc')->limit(15)->get();
-        return view('themes.backoffice.pages.comprobantes-sin-reserva.index', compact('pendientes', 'resueltos'));
+        return view('themes.backoffice.pages.comprobantes-sin-reserva.index', compact('pendientes', 'resueltos', 'programas'));
     }
 
     public function imagen($id)
@@ -69,6 +72,48 @@ class ComprobantesSinReservaController extends Controller
         $msg = 'Comprobante asociado a la reserva N°' . (int) $request->reserva_id . '.';
         $msg .= $upd['estado_pago'] === 'pendiente_verificacion' ? ' Quedó en Verificación de pagos para aprobarlo.' : ' La venta ya estaba pagada: solo se agregó la nota.';
         return redirect()->route('backoffice.comprobantes-sin-reserva.index')->with('success', $msg);
+    }
+
+    /** Crea la reserva desde el comprobante (mismo camino que el bot: revalida cupo, crea cliente, reserva y venta). */
+    public function crear(Request $request, $id)
+    {
+        $d = $request->validate([
+            'nombre' => 'required|string|max:200', 'telefono' => 'required|string|max:20', 'email' => 'nullable|email|max:200',
+            'programa_id' => 'required|integer|exists:programas,id', 'fecha' => 'required|date', 'personas' => 'required|integer|min:1|max:60',
+        ]);
+        $c = DB::table('comprobantes_sin_reserva')->where('id', $id)->where('estado', 'pendiente')->first();
+        abort_if(!$c, 404);
+        $tel = preg_replace('/\D/', '', $d['telefono']);
+        if (strlen($tel) === 9) { $tel = '56' . $tel; }
+        $holdId = DB::table('reserva_holds')->insertGetId([
+            'telefono' => $tel, 'nombre' => $d['nombre'], 'email' => $d['email'] ?: '', 'programa_id' => (int) $d['programa_id'],
+            'fecha' => $d['fecha'], 'personas' => (int) $d['personas'], 'masajes_extra' => 0, 'desayuno_once' => 0, 'tipo_pago' => 'Transferencia',
+            'valor_total' => 0, 'abono_50' => 0, 'diferencia' => 0, 'estado' => 'activo', 'expira_en' => now()->addMinutes(10),
+            'datos_json' => json_encode(['origen' => 'comprobantes_sin_reserva', 'comprobante_id' => (int) $id, 'telefono_chat' => $c->telefono]),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $res = app(\App\Http\Controllers\Api\BotReservaController::class)->convertirHoldEnReserva(DB::table('reserva_holds')->find($holdId));
+        if (empty($res['ok'])) {
+            DB::table('reserva_holds')->where('id', $holdId)->update(['estado' => 'cancelado', 'updated_at' => now()]);
+            return back()->with('error', 'No se pudo crear la reserva: ' . ($res['motivo'] ?? 'sin cupo para esa fecha y programa') . '.');
+        }
+        $rid = (int) $res['reserva_id'];
+        $venta = DB::table('ventas')->where('id_reserva', $rid)->first();
+        $total = (int) $venta->abono_programa + (int) $venta->diferencia_programa;
+        $pagado = $c->monto ? min((int) $c->monto, $total ?: (int) $c->monto) : (int) $venta->abono_programa;
+        DB::table('ventas')->where('id', $venta->id)->update([
+            'comprobante_transferencia' => $c->archivo, 'comprobante_monto' => $c->monto, 'comprobante_fecha' => $c->fecha_pago,
+            'comprobante_alerta' => 'Reserva creada desde Comprobantes sin reserva (WhatsApp +' . $c->telefono . ($c->glosa ? ', «' . $c->glosa . '»' : '') . ')'
+                . ($c->monto && $total && (int) $c->monto !== (int) $venta->abono_programa && (int) $c->monto !== $total ? ' | el monto del comprobante no calza con el abono ni el total: revisar' : ''),
+            'abono_programa' => $pagado, 'diferencia_programa' => max(0, $total - $pagado), 'total_pagar' => max(0, $total - $pagado),
+            'estado_pago' => 'pendiente_verificacion', 'updated_at' => now(),
+        ]);
+        DB::table('reserva_holds')->where('id', $holdId)->update(['estado' => 'confirmado', 'id_reserva' => $rid, 'updated_at' => now()]);
+        DB::table('comprobantes_sin_reserva')->where('id', $id)->update(['estado' => 'asociado', 'reserva_id' => $rid, 'venta_id' => $venta->id,
+            'nota' => 'Reserva creada desde esta pantalla', 'revisado_por' => auth()->id(), 'revisado_at' => now(), 'updated_at' => now()]);
+        Log::info('[ComprobantesSinReserva] Reserva creada', ['id' => $id, 'reserva' => $rid, 'por' => auth()->id()]);
+        return redirect()->route('backoffice.comprobantes-sin-reserva.index')
+            ->with('success', 'Reserva N°' . $rid . ' creada con el comprobante. Quedó en Verificación de pagos para aprobarla (al aprobar se le avisa al cliente).');
     }
 
     public function descartar(Request $request, $id)
