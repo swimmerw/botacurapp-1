@@ -16,6 +16,6 @@ foreach ($pasos as $msg) {
     $r = json_decode((new App\Http\Controllers\Api\BotController())->message($req)->getContent(), true) ?: [];
     echo "\nCLIENTE: $msg\nBOT [" . implode(',', $r['acciones_ejecutadas'] ?? []) . "]: " . ($r['mensaje'] ?? json_encode($r, JSON_UNESCAPED_UNICODE)) . "\n";
 }
-$ev = DB::table('bot_eventos')->where('usuario_id', $tel)->where('created_at', '>=', now()->subMinutes(10))->pluck('tipo')->all();
+$ev = DB::table('bot_eventos')->where('telefono', $tel)->where('created_at', '>=', now()->subMinutes(10))->pluck('tipo')->all();
 echo "\nEventos de control: " . ($ev ? implode(', ', $ev) : 'ninguno') . "\n";
 DB::table('bot_conversaciones')->where('usuario_id', $tel)->delete();
