@@ -82,6 +82,19 @@ foreach ($comp as $k) {
             }
         }
     }
+    if (!$res && $k['monto']) {
+        // ¿Quedó registrada con otro teléfono o a nombre de otra persona? Ventas recientes con ese mismo monto
+        $cand = DB::table('ventas as v')->join('reservas as r', 'r.id', '=', 'v.id_reserva')->join('clientes as c', 'c.id', '=', 'r.cliente_id')
+            ->where(function ($w) use ($k) { $w->where('v.abono_programa', $k['monto'])->orWhere('v.comprobante_monto', $k['monto'])
+                ->orWhereRaw('v.abono_programa + IFNULL(v.diferencia_programa,0) = ?', [$k['monto']]); })
+            ->where('r.created_at', '>=', now()->subDays(45)->toDateTimeString())->where('r.fecha_visita', '>=', now()->subDays(30)->toDateString())
+            ->select('r.id', 'r.fecha_visita', 'r.cantidad_personas', 'c.nombre_cliente', 'c.whatsapp_cliente', 'v.abono_programa', 'v.diferencia_programa')
+            ->orderBy('r.id', 'desc')->limit(4)->get();
+        foreach ($cand as $r) {
+            $detalle .= " | ¿R{$r->id}? {$r->fecha_visita} {$r->cantidad_personas}p " . mb_substr($r->nombre_cliente, 0, 20) . " +{$r->whatsapp_cliente} abono " . (int) $r->abono_programa . ' dif ' . (int) $r->diferencia_programa;
+        }
+        if ($cand->count()) { $estado = 'REVISAR: no hay reserva con este teléfono; posibles reservas con el mismo monto'; }
+    }
     $filas[] = [$estado, $k, $detalle];
 }
 usort($filas, function ($a, $b) { return strcmp($a[0], $b[0]) ?: strcmp((string) $a[1]['fecha'], (string) $b[1]['fecha']); });
@@ -90,7 +103,7 @@ $cuenta = ['OK' => 0, 'REVISAR' => 0, 'FALTA' => 0];
 echo "==== COMPROBANTES LEIDOS POR EL BOT (ultimos {$dias} dias) ====\n";
 foreach ($filas as $f) {
     list($estado, $k, $det) = $f; $cuenta[strtok($estado, ':')]++;
-    printf("%-8s +%s %-22s pago %s %s %s%s\n", strtok($estado, ':'), $k['tel'], mb_substr((string) $k['nombre'], 0, 22),
+    printf("%-8s +%s %-22s pago %s %s %s%s\n\n", strtok($estado, ':'), $k['tel'], mb_substr((string) $k['nombre'], 0, 22),
         $k['fecha'] ?: '¿fecha?', $k['monto'] ? '$' . number_format($k['monto'], 0, ',', '.') : '¿monto?', $k['mensaje'] ? '«' . $k['mensaje'] . '»' : '', $estado === 'OK' ? '' : $det);
 }
 
