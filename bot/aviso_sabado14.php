@@ -37,7 +37,8 @@ foreach ($convs as $c) {
     if ($ya) { echo "+{$c->usuario_id}: ya avisado\n"; continue; }
     $n++;
     $nombre = trim((string) ($c->nombre_cliente ?? ''));
-    $pila = $nombre && stripos($nombre, 'cliente') === false ? explode(' ', $nombre)[0] : '';
+    $pila = $nombre && stripos($nombre, 'cliente') === false ? explode(' ', trim(preg_replace('/[^A-Za-zÁÉÍÓÚÑáéíóúñü ]+/u', ' ', $nombre)))[0] : '';
+    if (mb_strlen($pila) < 2) { $pila = ''; }
     $txt = 'Hola' . ($pila ? ' ' . $pila : '') . ', una aclaración sobre el sábado 14 de noviembre: ese día ya está cerrado porque no quedan cupos. Te pedimos disculpas por la confusión. '
         . ($otra ? 'Seguimos con el ' . $otra . ' cuando nos confirmes 😊' : 'Si quieres te revisamos otra fecha 😊');
     $ultimoCliente = Carbon\Carbon::parse($c->updated_at);
