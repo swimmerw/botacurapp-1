@@ -5,7 +5,7 @@ $app = require '/var/www/html/botacurapp/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\DB;
 $tel = '56900000011';
-$pasos = array_slice($argv, 1) ?: ['Hola, tienen disponibilidad para este sábado?', 'Somos 2', 'Wellness Plus', '¿Y el jueves 26 de noviembre?', 'Sí, avancemos'];
+$pasos = array_slice($argv, 1) ?: ['Hola, quiero reservar para el sábado 21 de noviembre', 'Somos 2', 'Wellness Plus', 'Prefiero el jueves 26 de noviembre', 'Ana Pérez Soto', 'Sí, ese número', 'ana.prueba@ejemplo.cl'];
 DB::table('bot_conversaciones')->where('usuario_id', $tel)->delete();
 foreach ($pasos as $msg) {
     $req = Illuminate\Http\Request::create('/api/bot-ai/message', 'POST', ['telefono' => $tel, 'mensaje' => $msg, 'nombre' => 'Prueba', 'simulacion' => true]);
