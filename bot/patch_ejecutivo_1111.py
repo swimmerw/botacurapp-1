@@ -125,6 +125,24 @@ bt = reemplazar(bt, """    public static function permiteReservaChica($fecha, in
     public static function permiteReservaChica($fecha, int $personas): bool
     {""", 'grupoAbreDia')
 
+# ── 2c) verificar_disponibilidad respeta el mínimo de lunes a miércoles ─────
+bc = reemplazar(bc, """$codigos = ['grupo_grande', 'agenda_no_abierta', 'fecha_pasada', 'fecha_no_habilitada', 'fecha_invalida', 'sin_cupo_masajes'];""",
+                """$codigos = ['grupo_grande', 'agenda_no_abierta', 'fecha_pasada', 'fecha_no_habilitada', 'fecha_invalida', 'sin_cupo_masajes', 'dia_solo_grupos'];""", 'verificar lun-mié')
+
+# ── 2d) No decir "recibimos tu comprobante" sin comprobante ─────────────────
+bc = reemplazar(bc, """        // Control de montos: todo "$" del mensaje debe venir del sistema.""", """        // patch_ejecutivo_1111: solo se dice que llegó el comprobante si el sistema lo recibió en este turno.
+        $ultU = '';
+        for ($k = count($historial) - 1; $k >= 0; $k--) {
+            if (($historial[$k]['role'] ?? '') === 'user') { $ultU = (string) $historial[$k]['content']; break; }
+        }
+        if (strpos($ultU, '[Sistema-comprobante') === false
+            && preg_match('/recib(imos|í|i)\\s+(tu|el|su)\\s+comprobante|verificando (el|tu) pago|est[aá] verificando el pago/iu', (string) ($respuesta['mensaje'] ?? ''))) {
+            \\App\\Services\\BotAprendizajeService::evento('comprobante_inventado', $usuarioId, ['mensaje' => mb_substr((string) $respuesta['mensaje'], 0, 300)]);
+            $respuesta = ['accion' => 'responder', 'datos' => [], 'mensaje' => 'Para confirmar tu reserva necesito la foto del comprobante de transferencia 📸 ¿Me la envías por este chat?'];
+        }
+
+        // Control de montos: todo "$" del mensaje debe venir del sistema.""", 'comprobante inventado')
+
 # ── Prompt ───────────────────────────────────────────────────────────────────
 bp = reemplazar(bp, """  → Dile al cliente que una persona del equipo le responderá por este mismo chat a la brevedad.
     El sistema avisa al equipo y tú quedas en pausa en este chat.""", """  → NO prometas que alguien le escribirá. Dile en una línea que eso no lo puedes resolver por aquí y que,
