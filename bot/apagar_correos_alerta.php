@@ -29,4 +29,4 @@ foreach (explode("\n", trim(shell_exec("grep -rln 'Mail::' " . base_path('app') 
     $usaAlerta = strpos(file_get_contents($f), 'alerta_correo') !== false;
     echo '  ' . str_replace(base_path() . '/', '', $f) . ($usaAlerta ? '  → alerta del bot: APAGADA' : '  → otro envío (clientes, gift card, sueldos, etc.)') . "\n";
 }
-echo "\nAlertas que siguen en la app (pendientes sin atender): " . DB::table('bot_mensajes_pendientes')->where('estado', 'pendiente')->count() . "\n";
+try { echo "\nAlertas que siguen en la app (pendientes sin atender): " . \App\BotMensajePendiente::where('estado', 'pendiente')->count() . "\n"; } catch (\Throwable $e) {}
