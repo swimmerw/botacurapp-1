@@ -22,14 +22,14 @@ t('cliente y reservas', function () use ($tels) {
     foreach ($cl as $c) { echo "cliente #{$c->id} {$c->nombre_cliente} creado {$c->created_at}\n"; }
     foreach (DB::table('reservas as r')->leftJoin('ventas as v', 'v.id_reserva', '=', 'r.id')->leftJoin('programas as p', 'p.id', '=', 'r.id_programa')
         ->whereIn('r.cliente_id', $cl->pluck('id')->all() ?: [0])->orderBy('r.id')
-        ->select('r.id', 'r.fecha_visita', 'r.cantidad_personas', 'p.nombre_programa', 'r.estado', 'r.created_at', 'r.deleted_at', 'v.id as venta', 'v.estado_pago', 'v.abono_programa')->get() as $r) { fila($r); }
+        ->select('r.id', 'r.fecha_visita', 'r.cantidad_personas', 'p.nombre_programa', 'r.estado', 'r.created_at', 'v.id as venta', 'v.estado_pago', 'v.abono_programa')->get() as $r) { fila($r); }
 });
 t('reservas creadas ayer 15:40–16:10 (por si quedó con otro cliente)', function () {
     foreach (DB::table('reservas as r')->leftJoin('clientes as c', 'c.id', '=', 'r.cliente_id')->whereBetween('r.created_at', ['2026-11-10 15:40:00', '2026-11-10 16:10:00'])
         ->select('r.id', 'r.fecha_visita', 'r.cantidad_personas', 'c.nombre_cliente', 'c.whatsapp_cliente', 'r.created_at')->get() as $r) { fila($r); }
 });
 t('eventos del bot', function () use ($tels) {
-    foreach (DB::table('bot_eventos')->whereIn('telefono', $tels)->where('created_at', '>=', '2026-11-10')->orderBy('id')->get() as $e) {
+    foreach (DB::table('bot_eventos')->whereIn('telefono', $tels)->where('created_at', '>=', '2026-11-05')->orderBy('id')->get() as $e) {
         echo $e->created_at . ' ' . $e->tipo . ' ' . mb_substr((string) ($e->datos_json ?? $e->datos ?? ''), 0, 300) . "\n";
     }
 });
@@ -37,14 +37,15 @@ t('conversación (últimos 14 turnos, recortados)', function () use ($tels) {
     $c = DB::table('bot_conversaciones')->whereIn('usuario_id', $tels)->orderBy('id', 'desc')->first();
     if (!$c) { echo "sin conversación\n"; return; }
     echo "requiere_humano={$c->requiere_humano} humano_hasta={$c->humano_hasta}\n";
-    foreach (array_slice(json_decode($c->historial_json ?: '[]', true) ?: [], -14) as $m) {
-        echo strtoupper($m['role']) . ': ' . mb_substr(str_replace("\n", ' ', (string) $m['content']), 0, 700) . "\n";
+    echo "conversación actualizada: {$c->updated_at}\n";
+    foreach (array_slice(json_decode($c->historial_json ?: '[]', true) ?: [], -24) as $m) {
+        echo strtoupper($m['role']) . ': ' . mb_substr(str_replace("\n", ' ', (string) $m['content']), 0, 1500) . "\n";
     }
 });
 t('log de ayer y hoy', function () use ($tel, $corto) {
-    foreach (glob(storage_path('logs/laravel-2026-11-1[01].log')) as $f) {
+    foreach (glob(storage_path('logs/laravel-2026-11-*.log')) as $f) {
         foreach (file($f) as $l) {
-            if (strpos($l, $corto) !== false && preg_match('/omprobante|Hold|Reserva|Vision|ERROR|rechaz/', $l)) { echo mb_substr(trim($l), 0, 500) . "\n"; }
+            if (strpos($l, $corto) !== false && preg_match('/omprobante|Hold|Reserva|Vision|ERROR|rechaz|Bot\]/', $l)) { echo mb_substr(trim($l), 0, 500) . "\n"; }
         }
     }
 });
