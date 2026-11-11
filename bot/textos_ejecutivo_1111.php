@@ -22,8 +22,13 @@ echo "regla_eventos: actualizada\n";
 
 foreach (['regla_programas_semana', 'regla_apertura_agenda'] as $k) {
     $t = (string) $resp[$k]; $n = 0;
-    $t = preg_replace('/- Grupo de 10 o más que pide un lunes, martes o miércoles:[^\n]*/u',
-        '- Grupo de 10 a 24 personas que pide un lunes, martes o miércoles (aunque no esté habilitado): SÍ se puede, reserva directo por este chat con el flujo normal; el sistema lo valida. Puede tomar el programa S (10% de descuento, solo transferencia). Grupos menores, parejas incluidas, solo si "cotizar" y verificar_disponibilidad lo permiten (el día ya tiene el mínimo interno); si no, dile solo que ese día no tenemos disponibilidad.', -1, $c); $n += $c;
+    $nuevaLinea = '- Grupo de 10 a 24 personas que pide un lunes, martes o miércoles (aunque no esté habilitado): SÍ se puede, reserva directo por este chat con el flujo normal; el sistema lo valida. Puede tomar el programa S (10% de descuento, solo transferencia). Grupos menores, parejas incluidas, solo si "cotizar" y verificar_disponibilidad lo permiten (el día ya tiene el mínimo interno); si no, dile solo que ese día no tenemos disponibilidad.';
+    $lineas = explode("\n", $t);
+    foreach ($lineas as $x => $l) {
+        if (mb_strpos($l, '- Grupo de 10 o más que pide un lunes, martes o miércoles:') === 0) { $lineas[$x] = $nuevaLinea; $n++; }
+    }
+    if (!$n) { echo "$k: sin cambios\n"; continue; }
+    $t = implode("\n", $lineas);
     $set($k, $t);
     echo "$k: $n cambio(s)\n";
 }
