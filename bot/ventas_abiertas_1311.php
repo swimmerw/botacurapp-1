@@ -1,6 +1,6 @@
 <?php
 // Gestión Consumo (13/11/2026): ventas de hoy y futuras que aparecen "cerradas" sin haberse cerrado.
-// Una venta cerrada tiene total_pagar = 0; si tiene diferencia y aún total_pagar > 0, no se cerró.
+// Una venta cerrada tiene total_pagar = 0 y el medio de pago de la diferencia; si falta eso, no se cerró.
 //   sin argumento: diagnóstico     |   arreglar: reabre las de hoy y futuras
 require '/var/www/html/botacurapp/vendor/autoload.php';
 $app = require '/var/www/html/botacurapp/bootstrap/app.php';
@@ -16,7 +16,12 @@ foreach (glob(base_path('app/Http/Controllers/*ReservasDelDia*Controller.php')) 
 echo "\n== Código que guarda un valor en diferencia_programa (fuera de respaldos):\n";
 echo shell_exec("grep -rn \"diferencia_programa'\\s*=>\" " . base_path('app') . " --include=*.php | grep -v '\\.bak' | grep -v '=> null' | sed 's#" . base_path() . "/##' | cut -c1-170");
 $q = DB::table('ventas as v')->join('reservas as r', 'r.id', '=', 'v.id_reserva')->leftJoin('clientes as c', 'c.id', '=', 'r.cliente_id')
-    ->whereNotNull('v.diferencia_programa')->where('v.total_pagar', '>', 0)->whereRaw('DATE(r.fecha_visita) >= CURDATE()')
+    ->whereNotNull('v.diferencia_programa')->whereRaw('DATE(r.fecha_visita) >= CURDATE()')
+    // No cerrada: aún hay saldo por cobrar, o nunca se registró cómo se pagó la diferencia (pagadas 100% al reservar)
+    ->where(function ($w) {
+        $w->where('v.total_pagar', '>', 0);
+        if (\Schema::hasColumn('ventas', 'id_tipo_transaccion_diferencia')) { $w->orWhereNull('v.id_tipo_transaccion_diferencia'); }
+    })
     ->where(function ($w) { $w->whereNull('r.estado')->orWhere('r.estado', '<>', 'cancelada'); });
 $filas = (clone $q)->select('v.id', 'r.id as reserva', 'r.fecha_visita', 'r.fuente', 'r.created_at', 'c.nombre_cliente', 'v.abono_programa', 'v.diferencia_programa', 'v.total_pagar', 'v.estado_pago')->orderBy('r.fecha_visita')->get();
 echo "\n== Ventas de hoy y futuras que aparecen cerradas sin cerrarse: " . $filas->count() . "\n";
